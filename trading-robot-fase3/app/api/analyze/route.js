@@ -23,6 +23,39 @@ function analyzeRows(symbol, rows){
   const targetCall=+(close+(at[i]||range*.5)*1.5).toFixed(2), targetPut=+(close-(at[i]||range*.5)*1.5).toFixed(2);
   return {symbol, time:rows[i].time, close:+close.toFixed(2), score, signal, side, reasons, indicators:{rsi:+(rs[i]||0).toFixed(2), ema20:+e20[i].toFixed(2), ema50:+e50[i].toFixed(2), ema200:+e200[i].toFixed(2), macdHist:+m.hist[i].toFixed(4), atr:+(at[i]||0).toFixed(2), volume:lastVol, avgVolume:Math.round(avgVol)}, levels:{support:+support.toFixed(2), resistance:+resistance.toFixed(2), entryCall, entryPut, stopCall, stopPut, targetCall, targetPut}, optionIdea:{type:side, strike:side==='CALL'?Math.ceil(close):side==='PUT'?Math.floor(close):null, expiration:'7 a 14 días para swing; 0DTE solo con experiencia y stop estricto', maxPremiumRisk:'Riesgo máximo sugerido: 2% a 5% de la cuenta; práctica: stop -20% a -30% de la prima', avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen, o hay noticia fuerte sin confirmar'}};
 }
-async function fetchRows(symbol,key){const url=`https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=15min&outputsize=compact&apikey=${key}`;const res=await fetch(url,{next:{revalidate:60}});const data=await res.json();const raw=data['Time Series (15min)'];if(!raw)throw new Error('Sin datos de Alpha Vantage para '+symbol);return Object.entries(raw).reverse().map(([time,v])=>({time,open:+v['1. open'],high:+v['2. high'],low:+v['3. low'],close:+v['4. close'],volume:+v['5. volume']}));}
+async function fetchRows(symbol,key){
+  const urls=[
+    `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=15min&outputsize=compact&apikey=${key}`,
+    `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${key}`
+  ];
+
+  for(const url of urls){
+    const res=await fetch(url,{cache:'no-store'});
+    const data=await res.json();
+
+    if(data.Note || data.Information){
+      throw new Error(data.Note || data.Information);
+    }
+
+    if(data["Error Message"]){
+      throw new Error(data["Error Message"]);
+    }
+
+    const raw=data["Time Series (15min)"] || data["Time Series (Daily)"];
+
+    if(raw){
+      return Object.entries(raw).reverse().map(([time,v])=>({
+        time,
+        open:+v["1. open"],
+        high:+v["2. high"],
+        low:+v["3. low"],
+        close:+v["4. close"],
+        volume:+v["5. volume"]
+      }));
+    }
+  }
+
+  throw new Error("Alpha Vantage no devolvió datos para "+symbol);
+}
 export async function GET(req){try{const {searchParams}=new URL(req.url);const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();const key=process.env.ALPHA_VANTAGE_API_KEY || process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;if(!key)return Response.json({error:'Falta ALPHA_VANTAGE_API_KEY'},{status:500});const rows=await fetchRows(symbol,key);return Response.json({analysis:analyzeRows(symbol,rows), disclaimer:'Solo educativo; no es consejo financiero oficial.'});}catch(e){return Response.json({error:e.message},{status:400})}}
 export { analyzeRows, fetchRows };
