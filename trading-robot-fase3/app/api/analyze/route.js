@@ -25,8 +25,7 @@ function analyzeRows(symbol, rows){
 }
 async function fetchRows(symbol,key){
   const urls=[
-    `https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=${symbol}&interval=15min&outputsize=compact&apikey=${key}`,
-    `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${key}`
+        `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${key}`
   ];
 
   for(const url of urls){
