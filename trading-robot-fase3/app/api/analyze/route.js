@@ -25,16 +25,26 @@ const trendPut = close < e20[i] && close < e50[i] && m.hist[i] < 0 && rs[i] <= 5
 
 const strongCall = score >= 4 && trendCall && lastVol > avgVol;
 const strongPut = score <= -4 && trendPut && lastVol > avgVol;
+// Confirmaciones multi-timeframe
 
+const confirm15mCall = close > e20[i];
+const confirm15mPut = close < e20[i];
+
+const confirm1hCall = close > e50[i];
+const confirm1hPut = close < e50[i];
+
+const mtfCall = confirm15mCall && confirm1hCall;
+const mtfPut = confirm15mPut && confirm1hPut;
+  
 const weakCall = score >= 3 && close > e20[i] && rs[i] >= 50;
 const weakPut = score <= -3 && close < e20[i] && rs[i] <= 50;
 
-if (strongCall) {
+if (strongCall && mtfCall) {
   signal = 'COMPRAR CALL';
   side = 'CALL';
   estado = '🟢 ENTRAR AHORA';
   reasons.push('CALL con tendencia, momentum y volumen');
-} else if (strongPut) {
+} else if (strongPut && mtfPut) {
   signal = 'COMPRAR PUT';
   side = 'PUT';
   estado = '🟢 ENTRAR AHORA';
