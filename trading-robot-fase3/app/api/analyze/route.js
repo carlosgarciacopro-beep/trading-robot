@@ -18,7 +18,6 @@ function analyzeRows(symbol, rows){
   if(lastVol>avgVol*1.15){score+= score>=0?1:-1;reasons.push('Volumen superior al promedio')}
   let signal = 'ESPERAR';
 let side = 'NEUTRAL';
-let side = 'NEUTRAL';
 let estado = '⚪ NO OPERAR';
 
 const trendCall = close > e20[i] && close > e50[i] && m.hist[i] > 0 && rs[i] >= 50;
