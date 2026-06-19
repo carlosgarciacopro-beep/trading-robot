@@ -1,7 +1,11 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 const DEFAULT='SPY,QQQ,NVDA,TSLA,AAPL,META,BAC,PLTR,AMZN';
-function cardText(a){return `${a.symbol} ${a.signal}\nPrecio: ${a.close}\nEntrada CALL arriba de: ${a.levels?.entryCall}\nEntrada PUT abajo de: ${a.levels?.entryPut}\nStop CALL: ${a.levels?.stopCall} | Stop PUT: ${a.levels?.stopPut}\nTarget CALL: ${a.levels?.targetCall} | Target PUT: ${a.levels?.targetPut}\nRSI: ${a.indicators?.rsi} | MACD hist: ${a.indicators?.macdHist}\nStrike sugerido: ${a.optionIdea?.strike||'N/A'} ${a.optionIdea?.type||''}\nExp: ${a.optionIdea?.expiration}\nRiesgo: ${a.optionIdea?.maxPremiumRisk}`}
+function cardText(a){
+  return `${a.symbol} - ${a.signal}
+Precio: ${a.close}
+Puntaje: ${a.score}`;
+}{return `${a.symbol} ${a.signal}\nPrecio: ${a.close}\nEntrada CALL arriba de: ${a.levels?.entryCall}\nEntrada PUT abajo de: ${a.levels?.entryPut}\nStop CALL: ${a.levels?.stopCall} | Stop PUT: ${a.levels?.stopPut}\nTarget CALL: ${a.levels?.targetCall} | Target PUT: ${a.levels?.targetPut}\nRSI: ${a.indicators?.rsi} | MACD hist: ${a.indicators?.macdHist}\nStrike sugerido: ${a.optionIdea?.strike||'N/A'} ${a.optionIdea?.type||''}\nExp: ${a.optionIdea?.expiration}\nRiesgo: ${a.optionIdea?.maxPremiumRisk}`}
 export default function Page(){
  const [ticker,setTicker]=useState('')const [mode,setMode]=useState('swing'),[watch,setWatch]=useState(DEFAULT),[loading,setLoading]=useState(false),[analysis,setAnalysis]=useState(null),[scan,setScan]=useState(null),[chat,setChat]=useState([]),bottom=useRef(null);
  useEffect(()=>bottom.current?.scrollIntoView({behavior:'smooth'}),[chat,analysis,scan,loading]);
