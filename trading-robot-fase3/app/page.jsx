@@ -144,9 +144,7 @@ export default function Page(){
  </div>)}
 
  <button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button>
-</Card>}{scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{borderTop:'1px solid #334155',padding:'14px 0'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}><b>{i+1}. {r.symbol} — {r.signal}</b><span style={{background:statusColor(r.estado),color:'#020617',padding:'6px 10px',borderRadius:999,fontWeight:900}}>{r.estado || '⚪ NO OPERAR'}</span></div><div style={{color:'#94a3b8'}}>Score {r.score} · RSI {r.indicators.rsi} · MACD {r.indicators.macdHist}</div><div>CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}</div><div>Stop CALL {r.levels.stopCall} / Stop PUT {r.levels.stopPut}</div></div>)}<button onClick={alertWhatsApp} style={btn}>
-  MANDAR MEJOR SETUP A WHATSAPP
-</button>
+
 
 </Card>}
 
