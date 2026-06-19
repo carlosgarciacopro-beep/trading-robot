@@ -16,12 +16,49 @@ function analyzeRows(symbol, rows){
   if(close>resistance-range*.08){score+=1;reasons.push('Cerca de romper resistencia')}
   if(close<support+range*.08){score-=1;reasons.push('Cerca de perder soporte')}
   if(lastVol>avgVol*1.15){score+= score>=0?1:-1;reasons.push('Volumen superior al promedio')}
-  let signal='ESPERAR', side='NEUTRAL'; if(score>=4){signal='COMPRAR CALL';side='CALL'} if(score<=-4){signal='COMPRAR PUT';side='PUT'}
+  let signal = 'ESPERAR';
+let side = 'NEUTRAL';
+let estado = '⚪ NO OPERAR';
+
+const nearCallEntry = close >= resistance - range * 0.15;
+const nearPutEntry = close <= support + range * 0.15;
+const extendedCall = close > e20[i] + (at[i] || range * 0.35);
+const extendedPut = close < e20[i] - (at[i] || range * 0.35);
+
+if (score >= 4) {
+  signal = 'COMPRAR CALL';
+  side = 'CALL';
+
+  if (extendedCall) {
+    estado = '🟡 ESPERAR PULLBACK';
+    reasons.push('Movimiento alcista extendido; no perseguir el precio');
+  } else if (nearCallEntry) {
+    estado = '🟢 ENTRADA VÁLIDA';
+    reasons.push('Precio cerca de zona de rompimiento CALL');
+  } else {
+    estado = '🟡 ESPERAR CONFIRMACIÓN';
+  }
+}
+
+if (score <= -4) {
+  signal = 'COMPRAR PUT';
+  side = 'PUT';
+
+  if (extendedPut) {
+    estado = '🟡 ESPERAR PULLBACK';
+    reasons.push('Movimiento bajista extendido; no perseguir el precio');
+  } else if (nearPutEntry) {
+    estado = '🟢 ENTRADA VÁLIDA';
+    reasons.push('Precio cerca de zona de rompimiento PUT');
+  } else {
+    estado = '🟡 ESPERAR CONFIRMACIÓN';
+  }
+}
   const entryCall=+(resistance+0.02).toFixed(2), entryPut=+(support-0.02).toFixed(2);
   const stopCall=+(Math.max(support, close-(at[i]||range*.35)).toFixed(2));
   const stopPut=+(Math.min(resistance, close+(at[i]||range*.35)).toFixed(2));
   const targetCall=+(close+(at[i]||range*.5)*1.5).toFixed(2), targetPut=+(close-(at[i]||range*.5)*1.5).toFixed(2);
-  return {symbol, time:rows[i].time, close:+close.toFixed(2), score, signal, side, reasons, indicators:{rsi:+(rs[i]||0).toFixed(2), ema20:+e20[i].toFixed(2), ema50:+e50[i].toFixed(2), ema200:+e200[i].toFixed(2), macdHist:+m.hist[i].toFixed(4), atr:+(at[i]||0).toFixed(2), volume:lastVol, avgVolume:Math.round(avgVol)}, levels:{support:+support.toFixed(2), resistance:+resistance.toFixed(2), entryCall, entryPut, stopCall, stopPut, targetCall, targetPut}, optionIdea:{type:side, strike:side==='CALL'?Math.ceil(close):side==='PUT'?Math.floor(close):null, expiration:'7 a 14 días para swing; 0DTE solo con experiencia y stop estricto', maxPremiumRisk:'Riesgo máximo sugerido: 2% a 5% de la cuenta; práctica: stop -20% a -30% de la prima', avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen, o hay noticia fuerte sin confirmar'}};
+  return {symbol, time:rows[i].time, close:+close.toFixed(2), score, signal, side, estado, reasons, indicators:{rsi:+(rs[i]||0).toFixed(2), ema20:+e20[i].toFixed(2), ema50:+e50[i].toFixed(2), ema200:+e200[i].toFixed(2), macdHist:+m.hist[i].toFixed(4), atr:+(at[i]||0).toFixed(2), volume:lastVol, avgVolume:Math.round(avgVol)}, levels:{support:+support.toFixed(2), resistance:+resistance.toFixed(2), entryCall, entryPut, stopCall, stopPut, targetCall, targetPut}, optionIdea:{type:side, strike:side==='CALL'?Math.ceil(close):side==='PUT'?Math.floor(close):null, expiration:'7 a 14 días para swing; 0DTE solo con experiencia y stop estricto', maxPremiumRisk:'Riesgo máximo sugerido: 2% a 5% de la cuenta; práctica: stop -20% a -30% de la prima', avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen, o hay noticia fuerte sin confirmar'}};
 }
 async function fetchRows(symbol,key){
   const urls=[
