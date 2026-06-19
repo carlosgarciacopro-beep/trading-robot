@@ -18,41 +18,39 @@ function analyzeRows(symbol, rows){
   if(lastVol>avgVol*1.15){score+= score>=0?1:-1;reasons.push('Volumen superior al promedio')}
   let signal = 'ESPERAR';
 let side = 'NEUTRAL';
+let signal = 'ESPERAR';
+let side = 'NEUTRAL';
 let estado = '⚪ NO OPERAR';
 
-const nearCallEntry = close >= resistance - range * 0.15;
-const nearPutEntry = close <= support + range * 0.15;
-const extendedCall = close > e20[i] + (at[i] || range * 0.35);
-const extendedPut = close < e20[i] - (at[i] || range * 0.35);
+const trendCall = close > e20[i] && close > e50[i] && m.hist[i] > 0 && rs[i] >= 50;
+const trendPut = close < e20[i] && close < e50[i] && m.hist[i] < 0 && rs[i] <= 50;
 
-if (score >= 4) {
+const strongCall = score >= 4 && trendCall && lastVol > avgVol;
+const strongPut = score <= -4 && trendPut && lastVol > avgVol;
+
+const weakCall = score >= 3 && close > e20[i] && rs[i] >= 50;
+const weakPut = score <= -3 && close < e20[i] && rs[i] <= 50;
+
+if (strongCall) {
   signal = 'COMPRAR CALL';
   side = 'CALL';
-
-  if (extendedCall) {
-    estado = '🟡 ESPERAR PULLBACK';
-    reasons.push('Movimiento alcista extendido; no perseguir el precio');
-  } else if (nearCallEntry) {
-    estado = '🟢 ENTRADA VÁLIDA';
-    reasons.push('Precio cerca de zona de rompimiento CALL');
-  } else {
-    estado = '🟡 ESPERAR CONFIRMACIÓN';
-  }
-}
-
-if (score <= -4) {
+  estado = '🟢 ENTRAR AHORA';
+  reasons.push('CALL con tendencia, momentum y volumen');
+} else if (strongPut) {
   signal = 'COMPRAR PUT';
   side = 'PUT';
-
-  if (extendedPut) {
-    estado = '🟡 ESPERAR PULLBACK';
-    reasons.push('Movimiento bajista extendido; no perseguir el precio');
-  } else if (nearPutEntry) {
-    estado = '🟢 ENTRADA VÁLIDA';
-    reasons.push('Precio cerca de zona de rompimiento PUT');
-  } else {
-    estado = '🟡 ESPERAR CONFIRMACIÓN';
-  }
+  estado = '🟢 ENTRAR AHORA';
+  reasons.push('PUT con tendencia, momentum y volumen');
+} else if (weakCall) {
+  signal = 'COMPRAR CALL';
+  side = 'CALL';
+  estado = '🟡 ESPERAR CONFIRMACIÓN';
+  reasons.push('CALL posible, falta confirmación fuerte');
+} else if (weakPut) {
+  signal = 'COMPRAR PUT';
+  side = 'PUT';
+  estado = '🟡 ESPERAR CONFIRMACIÓN';
+  reasons.push('PUT posible, falta confirmación fuerte');
 }
   const entryCall=+(resistance+0.02).toFixed(2), entryPut=+(support-0.02).toFixed(2);
   const stopCall=+(Math.max(support, close-(at[i]||range*.35)).toFixed(2));
