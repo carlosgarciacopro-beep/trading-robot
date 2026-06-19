@@ -7,6 +7,7 @@ function cardText(a){
   return `${a.symbol} - ${a.signal}
 Precio: ${a.close}
 Puntaje: ${a.score}
+Estado: ${a.estado || 'NO OPERAR'}
 Entrada CALL arriba de: ${a.levels?.entryCall}
 Entrada PUT abajo de: ${a.levels?.entryPut}
 Stop CALL: ${a.levels?.stopCall} | Stop PUT: ${a.levels?.stopPut}`;
@@ -34,9 +35,8 @@ export default function Page(){
    if(!r.ok)throw new Error(d.error);
    setAnalysis(d.analysis);
    setChat(p=>[...p,{text:`✅ Análisis listo para ${sym}. Señal: ${d.analysis.signal}`}]);
-  }catch(e){
-   setChat(p=>[...p,{text:'❌ '+e.message}]);
-  }finally{setLoading(false)}
+  }catch(e){setChat(p=>[...p,{text:'❌ '+e.message}]);}
+  finally{setLoading(false)}
  }
 
  async function scanner(){
@@ -46,10 +46,9 @@ export default function Page(){
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
    setScan(d);
-   setChat(p=>[...p,{text:`🏆 Mejor activo del scanner: ${d.best?.symbol||'N/A'} — ${d.best?.signal||''}`}]);
-  }catch(e){
-   setChat(p=>[...p,{text:'❌ '+e.message}]);
-  }finally{setLoading(false)}
+   setChat(p=>[...p,{text:`🏆 Mejor activo: ${d.best?.symbol||'N/A'} — ${d.best?.signal||''}`}]);
+  }catch(e){setChat(p=>[...p,{text:'❌ '+e.message}]);}
+  finally{setLoading(false)}
  }
 
  async function alertWhatsApp(){
@@ -59,11 +58,38 @@ export default function Page(){
   setChat(p=>[...p,{text:d.ok?'📲 Alerta enviada':'⚠️ WhatsApp no configurado: '+d.error}]);
  }
 
- function Box({children}){return <div style={{background:'rgba(0,35,18,.85)',border:'1px solid #17452b',borderRadius:12,padding:14,margin:'12px 0',lineHeight:1.55}}>{children}</div>}
- function Analysis({a}){return <Box><h2 style={{color:'#00ff50'}}>{a.symbol} — {a.signal}</h2><p><b>Precio:</b> {a.close} | <b>Puntaje:</b> {a.score}</p><p><b>Estado:</b> {a.estado || '⚪ NO OPERAR'}</p><p><b>Entrada CALL:</b> arriba de {a.levels.entryCall} | <b>Entrada PUT:</b> abajo de {a.levels.entryPut}</p><p><b>Stop CALL:</b> {a.levels.stopCall} | <b>Stop PUT:</b> {a.levels.stopPut}</p><p><b>RSI:</b> {a.indicators.rsi} | <b>MACD:</b> {a.indicators.macdHist}</p><p><b>Razones:</b> {a.reasons.join(' · ')}</p><button onClick={alertWhatsApp} style={btn}>MANDAR ALERTA WHATSAPP</button></Box>}
+ const green='#22c55e', yellow='#facc15', red='#ef4444', panel='rgba(15,23,42,.82)';
+ const btn={background:green,color:'#03150a',border:0,borderRadius:12,padding:'11px 16px',fontWeight:900,cursor:'pointer'};
+ const inp={width:'100%',background:'#020617',border:'1px solid #334155',borderRadius:14,color:'#e2e8f0',padding:14,fontSize:15,outline:'none'};
 
- const btn={background:'#00ff50',color:'#001000',border:0,borderRadius:8,padding:'10px 14px',fontWeight:800,marginTop:8};
- const inp={flex:1,background:'#061109',border:'1px solid #17452b',borderRadius:8,color:'#c8ffd4',padding:12,fontSize:15};
+ function statusColor(s){
+  if((s||'').includes('ENTRAR'))return green;
+  if((s||'').includes('ESPERAR'))return yellow;
+  return '#94a3b8';
+ }
 
- return <main style={{fontFamily:'monospace',background:'#050d14',minHeight:'100vh',color:'#c8ffd4'}}><div style={{minHeight:'100vh',padding:18}}><div style={{maxWidth:960,margin:'0 auto'}}><h1 style={{color:'#00ff50'}}>TRADING.AI // OPTIONS DESK</h1><Box><b>Modo:</b> <button onClick={()=>setMode('swing')} style={btn}>Swing</button> <button onClick={()=>setMode('intraday')} style={btn}>Intradía</button> <span>Actual: {mode}</span></Box><Box><h3>1) Analizar un solo ticker</h3><div style={{display:'flex',gap:8}}><input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} placeholder='Ej: NVDA, TSLA, SPY...' style={inp}/><button onClick={()=>analyze()} style={btn}>ANALIZAR</button></div></Box><Box><h3>2) Scanner</h3><textarea value={watch} onChange={e=>setWatch(e.target.value.toUpperCase())} style={{...inp,width:'100%',minHeight:58}}/><button onClick={scanner} style={btn}>ESCANEAR Y RANKEAR</button></Box>{loading&&<p>Analizando...</p>}{analysis&&<Analysis a={analysis}/>} {scan&&<Box><h2>Ranking de mejores setups</h2>{scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{borderTop:'1px solid #17452b',padding:'10px 0'}}><b>{i+1}. {r.symbol}</b> — {r.signal} — score {r.score}<br/><b>Estado:</b> {r.estado || '⚪ NO OPERAR'}<br/>Entrada: CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}<br/>Stop: CALL {r.levels.stopCall} / PUT {r.levels.stopPut}<br/>RSI {r.indicators.rsi} · MACD {r.indicators.macdHist}</div>)}<button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button></Box>}{chat.slice(-3).map((m,i)=><Box key={i}>{m.text}</Box>)}<div ref={bottom}/><p style={{textAlign:'center',color:'#5f9970',fontSize:12}}>⚠️ Solo educativo. No compra ni vende automáticamente.</p></div></div></main>
+ function Card({children}){return <div style={{background:panel,border:'1px solid rgba(148,163,184,.22)',borderRadius:22,padding:20,margin:'16px 0',boxShadow:'0 20px 50px rgba(0,0,0,.35)',backdropFilter:'blur(12px)'}}>{children}</div>}
+
+ function Analysis({a}){return <Card><div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}><h2 style={{margin:0,color:green}}>{a.symbol} — {a.signal}</h2><span style={{background:statusColor(a.estado),color:'#020617',padding:'8px 12px',borderRadius:999,fontWeight:900}}>{a.estado || '⚪ NO OPERAR'}</span></div><p><b>Precio:</b> {a.close} | <b>Puntaje:</b> {a.score}</p><p><b>CALL:</b> arriba de {a.levels.entryCall} | <b>PUT:</b> abajo de {a.levels.entryPut}</p><p><b>Stop CALL:</b> {a.levels.stopCall} | <b>Stop PUT:</b> {a.levels.stopPut}</p><p><b>RSI:</b> {a.indicators.rsi} | <b>MACD:</b> {a.indicators.macdHist}</p><p style={{color:'#cbd5e1'}}><b>Razones:</b> {a.reasons.join(' · ')}</p><button onClick={alertWhatsApp} style={btn}>MANDAR ALERTA WHATSAPP</button></Card>}
+
+ return <main style={{fontFamily:'Inter, system-ui, Arial',background:'radial-gradient(circle at top left,#0f766e 0,#020617 35%,#020617 100%)',minHeight:'100vh',color:'#e2e8f0',padding:22}}>
+  <div style={{maxWidth:1050,margin:'0 auto'}}>
+   <div style={{margin:'18px 0 26px'}}><h1 style={{fontSize:34,margin:0,color:'#ecfeff'}}>Trading Robot IA</h1><p style={{color:'#94a3b8'}}>Scanner de opciones · Swing e intradía · Señales educativas</p></div>
+
+   <Card><b>Modo:</b> <button onClick={()=>setMode('swing')} style={{...btn,opacity:mode==='swing'?1:.45,marginLeft:8}}>Swing</button> <button onClick={()=>setMode('intraday')} style={{...btn,opacity:mode==='intraday'?1:.45,marginLeft:8}}>Intradía</button> <span style={{marginLeft:12,color:'#94a3b8'}}>Actual: {mode}</span></Card>
+
+   <Card><h3>Analizar ticker</h3><div style={{display:'flex',gap:10}}><input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==='Enter')analyze()}} placeholder='Ej: NVDA, TSLA, SPY...' style={inp}/><button onClick={()=>analyze()} style={btn}>ANALIZAR</button></div></Card>
+
+   <Card><h3>Scanner</h3><textarea value={watch} onChange={e=>setWatch(e.target.value.toUpperCase())} style={{...inp,minHeight:70}}/><button onClick={scanner} style={{...btn,marginTop:12}}>ESCANEAR Y RANKEAR</button></Card>
+
+   {loading&&<Card>⏳ Analizando...</Card>}
+   {analysis&&<Analysis a={analysis}/>}
+
+   {scan&&<Card><h2>Ranking de mejores setups</h2>{scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{borderTop:'1px solid #334155',padding:'14px 0'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}><b>{i+1}. {r.symbol} — {r.signal}</b><span style={{background:statusColor(r.estado),color:'#020617',padding:'6px 10px',borderRadius:999,fontWeight:900}}>{r.estado || '⚪ NO OPERAR'}</span></div><div style={{color:'#94a3b8'}}>Score {r.score} · RSI {r.indicators.rsi} · MACD {r.indicators.macdHist}</div><div>CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}</div><div>Stop CALL {r.levels.stopCall} / Stop PUT {r.levels.stopPut}</div></div>)}<button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button></Card>}
+
+   {chat.slice(-3).map((m,i)=><Card key={i}>{m.text}</Card>)}
+   <div ref={bottom}/>
+   <p style={{textAlign:'center',color:'#64748b',fontSize:12}}>⚠️ Solo educativo. No compra ni vende automáticamente.</p>
+  </div>
+ </main>
 }
