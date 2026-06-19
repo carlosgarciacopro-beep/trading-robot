@@ -85,7 +85,66 @@ export default function Page(){
    {loading&&<Card>⏳ Analizando...</Card>}
    {analysis&&<Analysis a={analysis}/>}
 
-   {scan&&<Card><h2>Ranking de mejores setups</h2>{scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{borderTop:'1px solid #334155',padding:'14px 0'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}><b>{i+1}. {r.symbol} — {r.signal}</b><span style={{background:statusColor(r.estado),color:'#020617',padding:'6px 10px',borderRadius:999,fontWeight:900}}>{r.estado || '⚪ NO OPERAR'}</span></div><div style={{color:'#94a3b8'}}>Score {r.score} · RSI {r.indicators.rsi} · MACD {r.indicators.macdHist}</div><div>CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}</div><div>Stop CALL {r.levels.stopCall} / Stop PUT {r.levels.stopPut}</div></div>)}<button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button></Card>}
+   {scan&&<Card>
+ <h2>🏆 Mejor Setup</h2>
+
+ {scan.best&&<div style={{
+   background:'linear-gradient(135deg,rgba(34,197,94,.25),rgba(15,23,42,.9))',
+   border:'1px solid rgba(34,197,94,.5)',
+   borderRadius:18,
+   padding:18,
+   marginBottom:18
+ }}>
+   <h2 style={{margin:'0 0 8px',color:green}}>
+    {scan.best.symbol} — {scan.best.signal}
+   </h2>
+   <p style={{fontSize:18,margin:0}}>
+    <b>Estado:</b> {scan.best.estado || '⚪ NO OPERAR'}
+   </p>
+   <p style={{fontSize:18,margin:'6px 0'}}>
+    <b>Confianza IA:</b> {scan.best.confidence || (50 + Math.abs(scan.best.score||0)*10)}%
+   </p>
+   <p style={{color:'#94a3b8'}}>
+    Score {scan.best.score} · RSI {scan.best.indicators?.rsi} · MACD {scan.best.indicators?.macdHist}
+   </p>
+ </div>}
+
+ <h2>Ranking de mejores setups</h2>
+
+ {scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{
+   borderTop:'1px solid #334155',
+   padding:'16px 0',
+   display:'grid',
+   gap:6
+ }}>
+   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    <b style={{fontSize:18}}>
+     {i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1+'.'} {r.symbol} — {r.signal}
+    </b>
+    <span style={{
+      background:statusColor(r.estado),
+      color:'#020617',
+      padding:'7px 12px',
+      borderRadius:999,
+      fontWeight:900
+    }}>
+     {r.estado || '⚪ NO OPERAR'}
+    </span>
+   </div>
+
+   <div style={{display:'flex',gap:12,flexWrap:'wrap',color:'#cbd5e1'}}>
+    <span><b>Confianza:</b> {r.confidence || (50 + Math.abs(r.score||0)*10)}%</span>
+    <span><b>Score:</b> {r.score}</span>
+    <span><b>RSI:</b> {r.indicators.rsi}</span>
+    <span><b>MACD:</b> {r.indicators.macdHist}</span>
+   </div>
+
+   <div>CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}</div>
+   <div style={{color:'#94a3b8'}}>Stop CALL {r.levels.stopCall} / Stop PUT {r.levels.stopPut}</div>
+ </div>)}
+
+ <button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button>
+</Card>}{scan.results.map((r,i)=>r.error?<p key={r.symbol}>{r.symbol}: sin datos</p>:<div key={r.symbol} style={{borderTop:'1px solid #334155',padding:'14px 0'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}><b>{i+1}. {r.symbol} — {r.signal}</b><span style={{background:statusColor(r.estado),color:'#020617',padding:'6px 10px',borderRadius:999,fontWeight:900}}>{r.estado || '⚪ NO OPERAR'}</span></div><div style={{color:'#94a3b8'}}>Score {r.score} · RSI {r.indicators.rsi} · MACD {r.indicators.macdHist}</div><div>CALL &gt; {r.levels.entryCall} / PUT &lt; {r.levels.entryPut}</div><div>Stop CALL {r.levels.stopCall} / Stop PUT {r.levels.stopPut}</div></div>)}<button onClick={alertWhatsApp} style={btn}>MANDAR MEJOR SETUP A WHATSAPP</button></Card>}
 
    {chat.slice(-3).map((m,i)=><Card key={i}>{m.text}</Card>)}
    <div ref={bottom}/>
