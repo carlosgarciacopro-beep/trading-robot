@@ -101,5 +101,20 @@ async function fetchRows(symbol,key){
 
   throw new Error("Alpha Vantage no devolvió datos para "+symbol);
 }
-export async function GET(req){try{const {searchParams}=new URL(req.url);const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();const key=process.env.ALPHA_VANTAGE_API_KEY || process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;if(!key)return Response.json({error:'Falta ALPHA_VANTAGE_API_KEY'},{status:500});const rows=await fetchRows(symbol,key);const analysis=analyzeRows(symbol,rows);analysis.mode=mode;return Response.json({analysis, disclaimer:'Solo educativo; no es consejo financiero oficial.'});}catch(e){return Response.json({error:e.message},{status:400})}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export async function GET(req){try{const {searchParams}=new URL(req.url);const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();const key=process.env.ALPHA_VANTAGE_API_KEY || process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;if(!key)return Response.json({error:'Falta ALPHA_VANTAGE_API_KEY'},{status:500});const rows=await fetchRows(symbol,key);const analysis=analyzeRows(symbol,rows);analysis.mode='swing';return Response.json({analysis, disclaimer:'Solo educativo; no es consejo financiero oficial.'});}catch(e){return Response.json({error:e.message},{status:400})}}
 export { analyzeRows, fetchRows };
