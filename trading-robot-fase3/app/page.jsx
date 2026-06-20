@@ -191,8 +191,8 @@ Consenso: 75%
       <Card>
        <h3>Analizar ticker</h3>
        <div style={{display:'flex',gap:10}}>
-        <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())} placeholder='Ej: NVDA, TSLA, SPY...' style={inp}/>
-        <button onClick={()=>analyze()} style={btn}>ANALIZAR</button>
+        <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase().replace(/\s/g,''))} placeholder='Ej: NVDA, TSLA, SPY...' style={inp}/>
+        <button onClick={()=>analyze(ticker)} style={btn}>ANALIZAR</button>
        </div>
       </Card>
 
