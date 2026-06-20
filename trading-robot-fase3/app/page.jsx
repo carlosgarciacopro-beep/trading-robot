@@ -215,7 +215,9 @@ Consenso: 75%
 <th>Activo</th>
 <th>Señal</th>
 <th>Entrada</th>
-<th>Target 1</th>          
+<th>Target 1</th>
+<th>Target 2</th>
+<th>R/R</th>
 <th>Score</th>
 <th>RSI</th>
 <th>MACD</th>
@@ -237,6 +239,16 @@ Consenso: 75%
           <td>{r.signal}</td>
           <td>{r.levels?.entryCall ? r.levels.entryCall.toFixed(2) : "-"}</td>
           <td>{r.levels?.target1 ? r.levels.target1.toFixed(2) : "-"}</td>
+          <td>{r.levels?.target2 ? r.levels.target2.toFixed(2) : "-"}</td>
+
+<td>
+  {r.levels?.entryCall && r.levels?.stopCall && r.levels?.target2
+    ? (
+        Math.abs(r.levels.target2 - r.levels.entryCall) /
+        Math.abs(r.levels.entryCall - r.levels.stopCall)
+      ).toFixed(2)
+    : "-"}
+</td>
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
           <td>{r.indicators?.rsi}</td>
           <td>{r.indicators?.macdHist}</td>
