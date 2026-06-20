@@ -231,12 +231,16 @@ export default function Page(){
      </Card>
 
      <Card>
-      <h3>RESUMEN DEL MERCADO</h3>
-      <p>SPY: pendiente</p>
-      <p>QQQ: pendiente</p>
-      <p>VIX: pendiente</p>
-      <p style={{color:yellow}}>Sesgo: neutral</p>
-     </Card>
+  <h3>RESUMEN DEL MERCADO</h3>
+
+  <p>SPY 🟢 Alcista</p>
+  <p>QQQ 🟢 Alcista</p>
+  <p>VIX 🔴 Bajo</p>
+
+  <h3 style={{color:'#22c55e'}}>
+    Sesgo: CALLS
+  </h3>
+</Card>
     </aside>
    </section>
 
