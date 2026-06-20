@@ -57,7 +57,7 @@ export default function Page(){
  async function analyze(sym){
   sym=(sym||ticker).trim().toUpperCase();
   if(!sym||loading)return;
-  setLoading(true); setTicker(''); setScan(null);
+  setLoading(true); setScan(null);
   try{
    const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
    const d=await r.json();
