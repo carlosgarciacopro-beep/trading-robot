@@ -214,11 +214,11 @@ Consenso: 75%
           <th>🏆</th>
 <th>Activo</th>
 <th>Señal</th>
+<th>Entrada</th>          
 <th>Score</th>
 <th>RSI</th>
 <th>MACD</th>
 <th>Confianza</th>
-<th>Entrada</th>
 <th>Stop</th>
 <th>Estado</th>
 <th>Acción</th>
