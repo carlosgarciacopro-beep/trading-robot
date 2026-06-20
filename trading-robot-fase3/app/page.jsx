@@ -10,7 +10,14 @@ export default function Page(){
  const [loading,setLoading]=useState(false);
  const [analysis,setAnalysis]=useState(null);
  const [scan,setScan]=useState(null);
- const bottom=useRef(null);
+ const bottom=useRef(null);const [isMobile,setIsMobile]=useState(false);
+
+useEffect(()=>{
+ const check=()=>setIsMobile(window.innerWidth<=768);
+ check();
+ window.addEventListener('resize',check);
+ return()=>window.removeEventListener('resize',check);
+},[]);
 
  useEffect(()=>bottom.current?.scrollIntoView({behavior:'smooth'}),[analysis,scan,loading]);
 
@@ -98,7 +105,7 @@ export default function Page(){
     </div>
    </header>
 
-   <section style={{display:'grid',gridTemplateColumns:'260px 1fr 300px',gap:18}}>
+   <section style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'260px 1fr 300px',gap:18}}>
     
     <aside style={{display:'grid',gap:14,alignContent:'start'}}>
      <Card>
@@ -121,7 +128,7 @@ export default function Page(){
      
      <Card>
       <h2 style={{marginTop:0}}>MEJOR SETUP</h2>
-      {best ? <div style={{display:'grid',gridTemplateColumns:'1.1fr .6fr .8fr 1.4fr',gap:18,alignItems:'center'}}>
+      {best ? <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.1fr .6fr .8fr 1.4fr',gap:18,alignItems:'center'}}>
        <div>
         <h1 style={{fontSize:44,margin:'0 0 6px'}}>{best.symbol}</h1>
         <span style={{
@@ -187,7 +194,7 @@ Consenso: 75%
       </div> : <p style={{color:'#94a3b8'}}>Escanea o analiza un ticker para ver el mejor setup.</p>}
      </Card>
 
-     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:18}}>
       <Card>
        <h3>Analizar ticker</h3>
        <div style={{display:'flex',gap:10}}>
@@ -301,7 +308,7 @@ Consenso: 75%
       </p>
      </Card>}
 
-     <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14}}>
+     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(4,1fr)',gap:14}}>
       <Card><h3>Próximos Earnings</h3><p>TSLA · NVDA · AAPL</p></Card>
       <Card><h3>Eventos Económicos</h3><p>CPI · PPI · FOMC</p></Card>
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
