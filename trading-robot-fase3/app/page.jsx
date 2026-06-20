@@ -239,8 +239,12 @@ Consenso: 75%
           <td>{r.signal}</td>
           <td>{r.levels?.entryCall ? r.levels.entryCall.toFixed(2) : "-"}</td>
           <td>{r.levels?.target1 ? r.levels.target1.toFixed(2) : "-"}</td>
-          <td>{r.levels?.target2 ? r.levels.target2.toFixed(2) : "-"}</td>
-
+          <td>
+  {r.levels?.target1 && r.levels?.entryCall
+    ? (r.levels.entryCall + ((r.levels.target1 - r.levels.entryCall) * 2)).toFixed(2)
+    : "-"}
+</td>
+        
 <td>
   {r.levels?.entryCall && r.levels?.stopCall && r.levels?.target2
     ? (
