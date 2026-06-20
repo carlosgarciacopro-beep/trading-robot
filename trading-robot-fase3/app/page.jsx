@@ -218,6 +218,8 @@ Consenso: 75%
 <th>RSI</th>
 <th>MACD</th>
 <th>Confianza</th>
+<th>Entrada</th>
+<th>Stop</th>
 <th>Estado</th>
          </tr>
         </thead>
@@ -234,8 +236,27 @@ Consenso: 75%
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
           <td>{r.indicators?.rsi}</td>
           <td>{r.indicators?.macdHist}</td>
-          <td>{confidence(r)}%</td>
-          <td style={{color:getColor(r.score),fontWeight:900}}>{getEstado(r)}</td>
+         <td>{confidence(r)}%</td>
+
+<td>
+ {r.score > 1
+   ? r.levels?.entryCall
+   : r.score < -1
+   ? r.levels?.entryPut
+   : 'Esperar'}
+</td>
+
+<td>
+ {r.score > 1
+   ? r.levels?.stopCall
+   : r.score < -1
+   ? r.levels?.stopPut
+   : '-'}
+</td>
+
+<td style={{color:getColor(r.score),fontWeight:900}}>
+ {getEstado(r)}
+</td>
          </tr>)}
         </tbody>
        </table>
