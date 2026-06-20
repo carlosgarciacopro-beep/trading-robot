@@ -221,6 +221,7 @@ Consenso: 75%
 <th>Entrada</th>
 <th>Stop</th>
 <th>Estado</th>
+<th>Acción</th>
          </tr>
         </thead>
         <tbody>
@@ -233,6 +234,7 @@ Consenso: 75%
 </td> 
           <td style={{fontWeight:900}}>{r.symbol}</td>
           <td>{r.signal}</td>
+          <td>{r.levels?.entryCall ? r.levels.entryCall.toFixed(2) : "-"}</td>
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
           <td>{r.indicators?.rsi}</td>
           <td>{r.indicators?.macdHist}</td>
