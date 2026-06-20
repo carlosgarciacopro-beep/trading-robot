@@ -135,6 +135,20 @@ useEffect(()=>{
          background:getColor(best.score),color:'#020617',
          padding:'8px 12px',borderRadius:10,fontWeight:900
         }}>{getEstado(best)}</span>
+        <button style={{
+ background:getColor(best.score),
+ color:'#020617',
+ border:0,
+ borderRadius:14,
+ padding:'14px 18px',
+ fontWeight:900,
+ fontSize:16,
+ width:'100%',
+ margin:'14px 0',
+ boxShadow:`0 0 25px ${getColor(best.score)}55`
+}}>
+ {best.score > 1 ? '🟢 ENTRAR CALL' : best.score < -1 ? '🔴 ENTRAR PUT' : '🟡 ESPERAR'}
+</button>
         <p style={{color:'#94a3b8',marginTop:15}}>Precio: {best.close}</p>
         <p style={{color:'#22c55e'}}>
   Entrada CALL: {best.levels?.entryCall}
