@@ -211,13 +211,21 @@ Consenso: 75%
        <table style={{width:'100%',borderCollapse:'collapse'}}>
         <thead>
          <tr style={{color:'#94a3b8',textAlign:'left'}}>
-          <th>#</th><th>Activo</th><th>Score</th><th>RSI</th><th>MACD</th><th>Confianza</th><th>Estado</th>
+          <th>🏆</th>
+<th>Activo</th>
+<th>Señal</th>
+<th>Score</th>
+<th>RSI</th>
+<th>MACD</th>
+<th>Confianza</th>
+<th>Estado</th>
          </tr>
         </thead>
         <tbody>
          {scan.results.map((r,i)=>!r.error && <tr key={r.symbol} style={{borderTop:'1px solid #334155'}}>
           <td style={{padding:14}}>{i+1}</td>
           <td style={{fontWeight:900}}>{r.symbol}</td>
+          <td>{r.signal}</td>
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
           <td>{r.indicators?.rsi}</td>
           <td>{r.indicators?.macdHist}</td>
