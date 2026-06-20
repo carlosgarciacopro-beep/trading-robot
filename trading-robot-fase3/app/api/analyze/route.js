@@ -66,7 +66,19 @@ if (strongCall && mtfCall) {
   const targetCall=+(close+(at[i]||range*.5)*1.5).toFixed(2), targetPut=+(close-(at[i]||range*.5)*1.5).toFixed(2);
  let confidence = 50 + Math.abs(score) * 10;
 if (estado.includes('ENTRAR AHORA')) confidence += 10;
-confidence = Math.min(confidence, 100); return {symbol, time:rows[i].time, close:+close.toFixed(2), score, confidence, signal, side, estado, reasons, indicators:{rsi:+(rs[i]||0).toFixed(2), ema20:+e20[i].toFixed(2), ema50:+e50[i].toFixed(2), ema200:+e200[i].toFixed(2), macdHist:+m.hist[i].toFixed(4), atr:+(at[i]||0).toFixed(2), volume:lastVol, avgVolume:Math.round(avgVol)}, levels:{support:+support.toFixed(2), resistance:+resistance.toFixed(2), entryCall, entryPut, stopCall, stopPut, targetCall, targetPut}, optionIdea:{type:side, strike:side==='CALL'?Math.ceil(close):side==='PUT'?Math.floor(close):null, expiration:'7 a 14 días para swing; 0DTE solo con experiencia y stop estricto', maxPremiumRisk:'Riesgo máximo sugerido: 2% a 5% de la cuenta; práctica: stop -20% a -30% de la prima', avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen, o hay noticia fuerte sin confirmar'}};
+confidence = Math.min(confidence, 100); return {symbol, time:rows[i].time, close:+close.toFixed(2), score, confidence, signal, side, estado, reasons, indicators:{rsi:+(rs[i]||0).toFixed(2), ema20:+e20[i].toFixed(2), ema50:+e50[i].toFixed(2), ema200:+e200[i].toFixed(2), macdHist:+m.hist[i].toFixed(4), atr:+(at[i]||0).toFixed(2), volume:lastVol, avgVolume:Math.round(avgVol)}, levels:{
+  support:+support.toFixed(2),
+  resistance:+resistance.toFixed(2),
+  entryCall,
+  entryPut,
+  stopCall,
+  stopPut,
+  targetCall,
+  targetPut,
+  target1: side === 'CALL' ? targetCall : side === 'PUT' ? targetPut : null,
+  target2: side === 'CALL' ? +(targetCall + Math.abs(targetCall - entryCall)).toFixed(2) : side === 'PUT' ? +(targetPut - Math.abs(entryPut - targetPut)).toFixed(2) : null,
+  riskReward: side === 'CALL' ? +(Math.abs(targetCall - entryCall) / Math.abs(entryCall - stopCall)).toFixed(2) : side === 'PUT' ? +(Math.abs(entryPut - targetPut) / Math.abs(stopPut - entryPut)).toFixed(2) : null
+}, optionIdea:{type:side, strike:side==='CALL'?Math.ceil(close):side==='PUT'?Math.floor(close):null, expiration:'7 a 14 días para swing; 0DTE solo con experiencia y stop estricto', maxPremiumRisk:'Riesgo máximo sugerido: 2% a 5% de la cuenta; práctica: stop -20% a -30% de la prima', avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen, o hay noticia fuerte sin confirmar'}};
 }
 async function fetchRows(symbol,key){
   const urls=[
