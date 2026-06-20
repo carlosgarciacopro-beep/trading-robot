@@ -129,6 +129,29 @@ export default function Page(){
          padding:'8px 12px',borderRadius:10,fontWeight:900
         }}>{getEstado(best)}</span>
         <p style={{color:'#94a3b8',marginTop:15}}>Precio: {best.close}</p>
+        <p style={{color:'#22c55e'}}>
+  Entrada CALL: {best.levels?.entryCall}
+</p>
+
+<p style={{color:'#ef4444'}}>
+  Entrada PUT: {best.levels?.entryPut}
+</p>
+
+<p>
+  Stop CALL: {best.levels?.stopCall}
+</p>
+
+<p>
+  Stop PUT: {best.levels?.stopPut}
+</p>
+
+<p style={{color:'#22c55e'}}>
+  Target 1: {(best.close * 1.02).toFixed(2)}
+</p>
+
+<p style={{color:'#22c55e'}}>
+  Target 2: {(best.close * 1.04).toFixed(2)}
+</p>
        </div>
 
        <div style={{textAlign:'center'}}>
