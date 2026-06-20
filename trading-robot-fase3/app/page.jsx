@@ -223,7 +223,12 @@ Consenso: 75%
         </thead>
         <tbody>
          {scan.results.map((r,i)=>!r.error && <tr key={r.symbol} style={{borderTop:'1px solid #334155'}}>
-          <td style={{padding:14}}>{i+1}</td>
+         <td style={{padding:14}}>
+ {i===0 ? '🥇' :
+  i===1 ? '🥈' :
+  i===2 ? '🥉' :
+  i+1}
+</td> 
           <td style={{fontWeight:900}}>{r.symbol}</td>
           <td>{r.signal}</td>
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
