@@ -246,10 +246,12 @@ Consenso: 75%
 </td>
         
 <td>
-  {r.levels?.entryCall && r.levels?.stopCall && r.levels?.target2
+  {r.levels?.entryCall && r.levels?.stopCall && r.levels?.target1
     ? (
-        Math.abs(r.levels.target2 - r.levels.entryCall) /
-        Math.abs(r.levels.entryCall - r.levels.stopCall)
+        Math.abs(
+          (r.levels.entryCall + ((r.levels.target1 - r.levels.entryCall) * 2)) 
+          - r.levels.entryCall
+        ) / Math.abs(r.levels.entryCall - r.levels.stopCall)
       ).toFixed(2)
     : "-"}
 </td>
