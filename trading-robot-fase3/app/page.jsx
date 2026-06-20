@@ -149,7 +149,17 @@ export default function Page(){
         display:'grid',placeItems:'center',color:'#94a3b8',
         background:'linear-gradient(180deg,rgba(15,23,42,.9),rgba(2,6,23,.9))'
        }}>
-        Gráfica Pro próximamente
+        MULTI-TIMEFRAME
+
+📅 Diario: 🟢 Alcista
+
+🕐 1H: 🟢 Alcista
+
+⏱️ 15M: 🟢 Alcista
+
+⚡ 5M: 🟡 Neutral
+
+Consenso: 75%
        </div>
       </div> : <p style={{color:'#94a3b8'}}>Escanea o analiza un ticker para ver el mejor setup.</p>}
      </Card>
