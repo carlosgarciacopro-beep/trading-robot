@@ -264,11 +264,34 @@ Consenso: 75%
     <aside style={{display:'grid',gap:14,alignContent:'start'}}>
      <Card>
       <h3>GUÍA DEL SCORE</h3>
-      <p style={{color:green}}>+4 a +5 CALL FUERTE</p>
-      <p style={{color:green}}>+2 a +3 CALL MODERADO</p>
-      <p style={{color:yellow}}>-1 a +1 NEUTRAL</p>
-      <p style={{color:red}}>-2 a -3 PUT MODERADO</p>
-      <p style={{color:red}}>-4 a -5 PUT FUERTE</p>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:18,height:18,borderRadius:'50%',background:'#22c55e'}}></div>
+<span>+4 a +5 CALL FUERTE</span>
+</div>
+
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:18,height:18,borderRadius:'50%',background:'#84cc16'}}></div>
+<span>+2 a +3 CALL MODERADO</span>
+</div>
+
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:18,height:18,borderRadius:'50%',background:'#eab308'}}></div>
+<span>-1 a +1 NEUTRAL</span>
+</div>
+
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:18,height:18,borderRadius:'50%',background:'#f97316'}}></div>
+<span>-2 a -3 PUT MODERADO</span>
+</div>
+
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<div style={{width:18,height:18,borderRadius:'50%',background:'#ef4444'}}></div>
+<span>-4 a -5 PUT FUERTE</span>
+</div>
+
+</div>
      </Card>
 
      <Card>
