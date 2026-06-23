@@ -83,13 +83,23 @@ export default function Page(){
 
    const savedHistory = JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-   const newSignal = {
+   const isCall = d.analysis.side === 'CALL';
+const isPut = d.analysis.side === 'PUT';
+
+const newSignal = {
     date: new Date().toLocaleString(),
     symbol: d.analysis.symbol,
     side: d.analysis.side,
+    mode: d.analysis.mode || mode,
+    price: d.analysis.close,
+    entry: isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
+    stop: isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
+    target1: d.analysis.levels?.target1,
+    target2: d.analysis.levels?.target2,
     probability: d.analysis.probability,
     score: d.analysis.score,
     status: 'PENDIENTE'
+};
    };
 
    const updatedHistory = [newSignal, ...savedHistory].slice(0,100);
@@ -344,9 +354,13 @@ Consenso: 75%`}
            <th>Fecha</th>
            <th>Ticker</th>
            <th>Señal</th>
-           <th>Probabilidad</th>
-           <th>Score</th>
-           <th>Estado</th>
+           <th>Modo</th>
+<th>Entrada</th>
+<th>Stop</th>
+<th>Target</th>
+<th>Probabilidad</th>
+<th>Score</th>
+<th>Estado</th>
           </tr>
          </thead>
          <tbody>
@@ -355,9 +369,13 @@ Consenso: 75%`}
             <td style={{padding:10}}>{h.date}</td>
             <td style={{fontWeight:900}}>{h.symbol}</td>
             <td>{h.side}</td>
-            <td>{h.probability}%</td>
-            <td style={{fontWeight:900,color:getColor(h.score)}}>{h.score}</td>
-            <td>{h.status}</td>
+            <td>{h.mode}</td>
+<td>{h.entry || '-'}</td>
+<td>{h.stop || '-'}</td>
+<td>{h.target1 || '-'}</td>
+<td>{h.probability}%</td>
+<td style={{fontWeight:900,color:getColor(h.score)}}>{h.score}</td>
+<td>{h.status}</td>
            </tr>
           ))}
          </tbody>
