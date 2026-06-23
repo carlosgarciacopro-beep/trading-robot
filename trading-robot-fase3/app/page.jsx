@@ -81,31 +81,30 @@ export default function Page(){
 
    setAnalysis(d.analysis);
 
-   const savedHistory = JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
+ const savedHistory = JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-   const isCall = d.analysis.side === 'CALL';
+const isCall = d.analysis.side === 'CALL';
 const isPut = d.analysis.side === 'PUT';
 
 const newSignal = {
-    date: new Date().toLocaleString(),
-    symbol: d.analysis.symbol,
-    side: d.analysis.side,
-    mode: d.analysis.mode || mode,
-    price: d.analysis.close,
-    entry: isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
-    stop: isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
-    target1: d.analysis.levels?.target1,
-    target2: d.analysis.levels?.target2,
-    probability: d.analysis.probability,
-    score: d.analysis.score,
-    status: 'PENDIENTE'
+  date: new Date().toLocaleString(),
+  symbol: d.analysis.symbol,
+  side: d.analysis.side,
+  mode: d.analysis.mode || mode,
+  price: d.analysis.close,
+  entry: isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
+  stop: isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
+  target1: d.analysis.levels?.target1,
+  target2: d.analysis.levels?.target2,
+  probability: d.analysis.probability,
+  score: d.analysis.score,
+  status: 'PENDIENTE'
 };
-   };
 
-   const updatedHistory = [newSignal, ...savedHistory].slice(0,100);
+const updatedHistory = [newSignal, ...savedHistory].slice(0,100);
 
-   localStorage.setItem('nexoraHistory', JSON.stringify(updatedHistory));
-   setHistory(updatedHistory);
+localStorage.setItem('nexoraHistory', JSON.stringify(updatedHistory));
+setHistory(updatedHistory);
 
   }catch(e){
    alert('Error: '+e.message)
