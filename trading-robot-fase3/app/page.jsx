@@ -70,6 +70,24 @@ useEffect(()=>{
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
    setAnalysis(d.analysis);
+
+const history = JSON.parse(
+  localStorage.getItem('nexoraHistory') || '[]'
+);
+
+history.unshift({
+  date: new Date().toLocaleString(),
+  symbol: d.analysis.symbol,
+  side: d.analysis.side,
+  probability: d.analysis.probability,
+  score: d.analysis.score,
+  status: 'PENDIENTE'
+});
+
+localStorage.setItem(
+  'nexoraHistory',
+  JSON.stringify(history.slice(0,100))
+);
   }catch(e){alert('Error: '+e.message)}
   finally{setLoading(false)}
  }
