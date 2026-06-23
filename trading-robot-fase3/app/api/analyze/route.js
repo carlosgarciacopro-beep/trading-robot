@@ -131,8 +131,8 @@ function analyzeRows(symbol, rows, mode='swing'){
 }
 
 async function fetchRows(symbol,key,mode='swing'){
-  const functionName = mode === 'intraday' ? 'TIME_SERIES_INTRADAY' : 'TIME_SERIES_DAILY';
-  const interval = mode === 'intraday' ? '&interval=5min' : '';
+  const functionName = 'TIME_SERIES_DAILY';
+  const interval = '';
   const outputsize = mode === 'intraday' ? 'compact' : 'compact';
 
   const url=`https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}${interval}&outputsize=${outputsize}&apikey=${key}`;
