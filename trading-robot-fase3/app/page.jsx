@@ -186,6 +186,15 @@ useEffect(()=>{
          width:110,height:110,borderRadius:'50%',border:`12px solid ${getColor(best.score)}`,
          display:'grid',placeItems:'center',fontSize:28,fontWeight:900,margin:'8px auto'
         }}>{confidence(best)}%</div>
+        <div style={{
+  textAlign:'center',
+  marginTop:10,
+  color:'#22c55e',
+  fontWeight:800,
+  fontSize:18
+}}>
+  Probabilidad: {best?.probability || 0}%
+</div>
        </div>
 
        <div style={{
