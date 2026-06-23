@@ -10,14 +10,21 @@ export default function Page(){
  const [loading,setLoading]=useState(false);
  const [analysis,setAnalysis]=useState(null);
  const [scan,setScan]=useState(null);
- const bottom=useRef(null);const [isMobile,setIsMobile]=useState(false);
+ const [history,setHistory]=useState([]);
+ const bottom=useRef(null);
+ const [isMobile,setIsMobile]=useState(false);
 
-useEffect(()=>{
- const check=()=>setIsMobile(window.innerWidth<=768);
- check();
- window.addEventListener('resize',check);
- return()=>window.removeEventListener('resize',check);
-},[]);
+ useEffect(()=>{
+  const check=()=>setIsMobile(window.innerWidth<=768);
+  check();
+  window.addEventListener('resize',check);
+  return()=>window.removeEventListener('resize',check);
+ },[]);
+
+ useEffect(()=>{
+  const saved=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
+  setHistory(saved);
+ },[]);
 
  useEffect(()=>bottom.current?.scrollIntoView({behavior:'smooth'}),[analysis,scan,loading]);
 
@@ -64,43 +71,53 @@ useEffect(()=>{
  async function analyze(sym){
   sym=(sym||ticker).trim().toUpperCase();
   if(!sym||loading)return;
-  setLoading(true); setScan(null);
+  setLoading(true); 
+  setScan(null);
+
   try{
    const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
+
    setAnalysis(d.analysis);
 
-const history = JSON.parse(
-  localStorage.getItem('nexoraHistory') || '[]'
-);
+   const savedHistory = JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-history.unshift({
-  date: new Date().toLocaleString(),
-  symbol: d.analysis.symbol,
-  side: d.analysis.side,
-  probability: d.analysis.probability,
-  score: d.analysis.score,
-  status: 'PENDIENTE'
-});
+   const newSignal = {
+    date: new Date().toLocaleString(),
+    symbol: d.analysis.symbol,
+    side: d.analysis.side,
+    probability: d.analysis.probability,
+    score: d.analysis.score,
+    status: 'PENDIENTE'
+   };
 
-localStorage.setItem(
-  'nexoraHistory',
-  JSON.stringify(history.slice(0,100))
-);
-  }catch(e){alert('Error: '+e.message)}
-  finally{setLoading(false)}
+   const updatedHistory = [newSignal, ...savedHistory].slice(0,100);
+
+   localStorage.setItem('nexoraHistory', JSON.stringify(updatedHistory));
+   setHistory(updatedHistory);
+
+  }catch(e){
+   alert('Error: '+e.message)
+  }finally{
+   setLoading(false)
+  }
  }
 
  async function scanner(){
-  setLoading(true); setAnalysis(null);
+  setLoading(true); 
+  setAnalysis(null);
+
   try{
    const r=await fetch('/api/scan?symbols='+encodeURIComponent(watch));
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
    setScan(d);
-  }catch(e){alert('Error: '+e.message)}
-  finally{setLoading(false)}
+  }catch(e){
+   alert('Error: '+e.message)
+  }finally{
+   setLoading(false)
+  }
  }
 
  const best = analysis || scan?.best;
@@ -146,51 +163,42 @@ localStorage.setItem(
      
      <Card>
       <h2 style={{marginTop:0}}>MEJOR SETUP</h2>
+
       {best ? <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.1fr .6fr .8fr 1.4fr',gap:18,alignItems:'center'}}>
        <div>
         <h1 style={{fontSize:44,margin:'0 0 6px'}}>{best.symbol}</h1>
+
         <span style={{
          background:getColor(best.score),color:'#020617',
          padding:'8px 12px',borderRadius:10,fontWeight:900
         }}>{getEstado(best)}</span>
+
         <button style={{
- background:getColor(best.score),
- color:'#020617',
- border:0,
- borderRadius:14,
- padding:'14px 18px',
- fontWeight:900,
- fontSize:16,
- width:'100%',
- margin:'14px 0',
- boxShadow:`0 0 25px ${getColor(best.score)}55`
-}}>
- {best.score > 1 ? '🟢 ENTRAR CALL' : best.score < -1 ? '🔴 ENTRAR PUT' : '🟡 ESPERAR'}
-</button>
+         background:getColor(best.score),
+         color:'#020617',
+         border:0,
+         borderRadius:14,
+         padding:'14px 18px',
+         fontWeight:900,
+         fontSize:16,
+         width:'100%',
+         margin:'14px 0',
+         boxShadow:`0 0 25px ${getColor(best.score)}55`
+        }}>
+         {best.score > 1 ? '🟢 ENTRAR CALL' : best.score < -1 ? '🔴 ENTRAR PUT' : '🟡 ESPERAR'}
+        </button>
+
         <p style={{color:'#94a3b8',marginTop:15}}>Precio: {best.close}</p>
-        <p style={{color:'#22c55e'}}>
-  Entrada CALL: {best.levels?.entryCall}
-</p>
+        <p style={{color:'#94a3b8'}}>Última vela: {best.time}</p>
+        <p style={{color:'#94a3b8'}}>Modo análisis: {best.mode || mode}</p>
 
-<p style={{color:'#ef4444'}}>
-  Entrada PUT: {best.levels?.entryPut}
-</p>
+        <p style={{color:'#22c55e'}}>Entrada CALL: {best.levels?.entryCall}</p>
+        <p style={{color:'#ef4444'}}>Entrada PUT: {best.levels?.entryPut}</p>
+        <p>Stop CALL: {best.levels?.stopCall}</p>
+        <p>Stop PUT: {best.levels?.stopPut}</p>
 
-<p>
-  Stop CALL: {best.levels?.stopCall}
-</p>
-
-<p>
-  Stop PUT: {best.levels?.stopPut}
-</p>
-
-<p style={{color:'#22c55e'}}>
-  Target 1: {(best.close * 1.02).toFixed(2)}
-</p>
-
-<p style={{color:'#22c55e'}}>
-  Target 2: {(best.close * 1.04).toFixed(2)}
-</p>
+        <p style={{color:'#22c55e'}}>Target 1: {best.levels?.target1 || '-'}</p>
+        <p style={{color:'#22c55e'}}>Target 2: {best.levels?.target2 || '-'}</p>
        </div>
 
        <div style={{textAlign:'center'}}>
@@ -204,33 +212,34 @@ localStorage.setItem(
          width:110,height:110,borderRadius:'50%',border:`12px solid ${getColor(best.score)}`,
          display:'grid',placeItems:'center',fontSize:28,fontWeight:900,margin:'8px auto'
         }}>{confidence(best)}%</div>
+
         <div style={{
-  textAlign:'center',
-  marginTop:10,
-  color:'#22c55e',
-  fontWeight:800,
-  fontSize:18
-}}>
-  Probabilidad: {best?.probability || 0}%
-</div>
+         textAlign:'center',
+         marginTop:10,
+         color:'#22c55e',
+         fontWeight:800,
+         fontSize:18
+        }}>
+         Probabilidad: {best?.probability || 0}%
+        </div>
        </div>
 
        <div style={{
         height:220,border:'1px solid #334155',borderRadius:18,
         display:'grid',placeItems:'center',color:'#94a3b8',
-        background:'linear-gradient(180deg,rgba(15,23,42,.9),rgba(2,6,23,.9))'
+        background:'linear-gradient(180deg,rgba(15,23,42,.9),rgba(2,6,23,.9))',
+        whiteSpace:'pre-line',
+        textAlign:'center',
+        padding:15
        }}>
-        MULTI-TIMEFRAME
+{`MULTI-TIMEFRAME
 
 📅 Diario: 🟢 Alcista
-
 🕐 1H: 🟢 Alcista
-
 ⏱️ 15M: 🟢 Alcista
-
 ⚡ 5M: 🟡 Neutral
 
-Consenso: 75%
+Consenso: 75%`}
        </div>
       </div> : <p style={{color:'#94a3b8'}}>Escanea o analiza un ticker para ver el mejor setup.</p>}
      </Card>
@@ -260,73 +269,35 @@ Consenso: 75%
         <thead>
          <tr style={{color:'#94a3b8',textAlign:'left'}}>
           <th>🏆</th>
-<th>Activo</th>
-<th>Señal</th>
-<th>Entrada</th>
-<th>Target 1</th>
-<th>Target 2</th>
-<th>R/R</th>
-<th>Score</th>
-<th>RSI</th>
-<th>MACD</th>
-<th>Confianza</th>
-<th>Stop</th>
-<th>Estado</th>
-<th>Acción</th>
+          <th>Activo</th>
+          <th>Señal</th>
+          <th>Entrada</th>
+          <th>Target 1</th>
+          <th>Target 2</th>
+          <th>R/R</th>
+          <th>Score</th>
+          <th>RSI</th>
+          <th>MACD</th>
+          <th>Confianza</th>
+          <th>Stop</th>
+          <th>Estado</th>
          </tr>
         </thead>
         <tbody>
          {scan.results.map((r,i)=>!r.error && <tr key={r.symbol} style={{borderTop:'1px solid #334155'}}>
-         <td style={{padding:14}}>
- {i===0 ? '🥇' :
-  i===1 ? '🥈' :
-  i===2 ? '🥉' :
-  i+1}
-</td> 
+          <td style={{padding:14}}>{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : i+1}</td> 
           <td style={{fontWeight:900}}>{r.symbol}</td>
           <td>{r.signal}</td>
-          <td>{r.levels?.entryCall ? r.levels.entryCall.toFixed(2) : "-"}</td>
-          <td>{r.levels?.target1 ? r.levels.target1.toFixed(2) : "-"}</td>
-          <td>
-  {r.levels?.target1 && r.levels?.entryCall
-    ? (r.levels.entryCall + ((r.levels.target1 - r.levels.entryCall) * 2)).toFixed(2)
-    : "-"}
-</td>
-        
-<td>
-  {r.levels?.entryCall && r.levels?.stopCall && r.levels?.target1
-    ? (
-        Math.abs(
-          (r.levels.entryCall + ((r.levels.target1 - r.levels.entryCall) * 2)) 
-          - r.levels.entryCall
-        ) / Math.abs(r.levels.entryCall - r.levels.stopCall)
-      ).toFixed(2)
-    : "-"}
-</td>
+          <td>{r.score > 1 ? r.levels?.entryCall : r.score < -1 ? r.levels?.entryPut : '-'}</td>
+          <td>{r.levels?.target1 || "-"}</td>
+          <td>{r.levels?.target2 || "-"}</td>
+          <td>{r.levels?.riskReward || "-"}</td>
           <td style={{fontSize:28,fontWeight:900,color:getColor(r.score)}}>{r.score}</td>
           <td>{r.indicators?.rsi}</td>
           <td>{r.indicators?.macdHist}</td>
-         <td>{confidence(r)}%</td>
-
-<td>
- {r.score > 1
-   ? r.levels?.entryCall
-   : r.score < -1
-   ? r.levels?.entryPut
-   : 'Esperar'}
-</td>
-
-<td>
- {r.score > 1
-   ? r.levels?.stopCall
-   : r.score < -1
-   ? r.levels?.stopPut
-   : '-'}
-</td>
-
-<td style={{color:getColor(r.score),fontWeight:900}}>
- {getEstado(r)}
-</td>
+          <td>{confidence(r)}%</td>
+          <td>{r.score > 1 ? r.levels?.stopCall : r.score < -1 ? r.levels?.stopPut : '-'}</td>
+          <td style={{color:getColor(r.score),fontWeight:900}}>{getEstado(r)}</td>
          </tr>)}
         </tbody>
        </table>
@@ -353,54 +324,88 @@ Consenso: 75%
       <Card><h3>Próximos Earnings</h3><p>TSLA · NVDA · AAPL</p></Card>
       <Card><h3>Eventos Económicos</h3><p>CPI · PPI · FOMC</p></Card>
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
-      <Card><h3>Stats Robot</h3><p>Operaciones hoy: --</p></Card>
+      <Card>
+       <h3>Stats Robot</h3>
+       <p>Señales guardadas: {history.length}</p>
+       <p>Ganadas: --</p>
+       <p>Perdidas: --</p>
+      </Card>
      </div>
+
+     <Card>
+      <h2>Historial Nexora</h2>
+      {history.length===0 ? (
+       <p style={{color:'#94a3b8'}}>Todavía no hay señales guardadas.</p>
+      ) : (
+       <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+         <thead>
+          <tr style={{color:'#94a3b8',textAlign:'left'}}>
+           <th>Fecha</th>
+           <th>Ticker</th>
+           <th>Señal</th>
+           <th>Probabilidad</th>
+           <th>Score</th>
+           <th>Estado</th>
+          </tr>
+         </thead>
+         <tbody>
+          {history.slice(0,10).map((h,i)=>(
+           <tr key={i} style={{borderTop:'1px solid #334155'}}>
+            <td style={{padding:10}}>{h.date}</td>
+            <td style={{fontWeight:900}}>{h.symbol}</td>
+            <td>{h.side}</td>
+            <td>{h.probability}%</td>
+            <td style={{fontWeight:900,color:getColor(h.score)}}>{h.score}</td>
+            <td>{h.status}</td>
+           </tr>
+          ))}
+         </tbody>
+        </table>
+       </div>
+      )}
+     </Card>
+
     </main>
 
     <aside style={{display:'grid',gap:14,alignContent:'start'}}>
      <Card>
       <h3>GUÍA DEL SCORE</h3>
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
+       <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:18,height:18,borderRadius:'50%',background:'#22c55e'}}></div>
+        <span>+4 a +5 CALL FUERTE</span>
+       </div>
 
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<div style={{width:18,height:18,borderRadius:'50%',background:'#22c55e'}}></div>
-<span>+4 a +5 CALL FUERTE</span>
-</div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:18,height:18,borderRadius:'50%',background:'#84cc16'}}></div>
+        <span>+2 a +3 CALL MODERADO</span>
+       </div>
 
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<div style={{width:18,height:18,borderRadius:'50%',background:'#84cc16'}}></div>
-<span>+2 a +3 CALL MODERADO</span>
-</div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:18,height:18,borderRadius:'50%',background:'#eab308'}}></div>
+        <span>-1 a +1 NEUTRAL</span>
+       </div>
 
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<div style={{width:18,height:18,borderRadius:'50%',background:'#eab308'}}></div>
-<span>-1 a +1 NEUTRAL</span>
-</div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:18,height:18,borderRadius:'50%',background:'#f97316'}}></div>
+        <span>-2 a -3 PUT MODERADO</span>
+       </div>
 
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<div style={{width:18,height:18,borderRadius:'50%',background:'#f97316'}}></div>
-<span>-2 a -3 PUT MODERADO</span>
-</div>
-
-<div style={{display:'flex',alignItems:'center',gap:10}}>
-<div style={{width:18,height:18,borderRadius:'50%',background:'#ef4444'}}></div>
-<span>-4 a -5 PUT FUERTE</span>
-</div>
-
-</div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <div style={{width:18,height:18,borderRadius:'50%',background:'#ef4444'}}></div>
+        <span>-4 a -5 PUT FUERTE</span>
+       </div>
+      </div>
      </Card>
 
      <Card>
-  <h3>RESUMEN DEL MERCADO</h3>
-
-  <p>SPY 🟢 Alcista</p>
-  <p>QQQ 🟢 Alcista</p>
-  <p>VIX 🔴 Bajo</p>
-
-  <h3 style={{color:'#22c55e'}}>
-    Sesgo: CALLS
-  </h3>
-</Card>
+      <h3>RESUMEN DEL MERCADO</h3>
+      <p>SPY 🟢 Alcista</p>
+      <p>QQQ 🟢 Alcista</p>
+      <p>VIX 🔴 Bajo</p>
+      <h3 style={{color:'#22c55e'}}>Sesgo: CALLS</h3>
+     </Card>
     </aside>
    </section>
 
