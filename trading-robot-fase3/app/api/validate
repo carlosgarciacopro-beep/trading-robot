@@ -290,7 +290,7 @@ export async function POST(req) {
         continue;
       }
 
-      const rows = await fetchRows(symbol, key, mode);
+      const rows = await fetchRows(symbol, key, 'intraday');
       const validated = validateSignal(signal, rows);
 
       results.push(validated);
