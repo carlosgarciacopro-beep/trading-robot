@@ -340,6 +340,7 @@ Consenso: 75%`}
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
       <Card>
        <Card>
+ <Card>
  <h3>Stats Robot</h3>
 
  <p>Señales guardadas: {history.length}</p>
