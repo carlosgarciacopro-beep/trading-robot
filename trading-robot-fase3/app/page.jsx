@@ -8,6 +8,8 @@ export default function Page(){
  const [watch,setWatch]=useState(DEFAULT);
  const [mode,setMode]=useState('swing');
  const [loading,setLoading]=useState(false);
+ const [progress,setProgress]=useState(0);
+const [loadingStep,setLoadingStep]=useState("");
  const [analysis,setAnalysis]=useState(null);
  const [scan,setScan]=useState(null);
  const [history,setHistory]=useState([]);
@@ -96,8 +98,12 @@ export default function Page(){
  async function analyze(sym){
   sym=(sym||ticker).trim().toUpperCase();
   if(!sym||loading)return;
-  setLoading(true); 
-  setScan(null);
+  setLoading(true);
+
+setProgress(10);
+setLoadingStep("Conectando Alpha Vantage...");
+
+setScan(null);
 
   try{
    const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
@@ -151,8 +157,17 @@ export default function Page(){
   }catch(e){
    alert('Error: '+e.message)
   }finally{
-   setLoading(false)
-  }
+
+  setProgress(100);
+  setLoadingStep("Análisis completado");
+
+  setTimeout(()=>{
+    setLoading(false);
+    setProgress(0);
+    setLoadingStep("");
+  },800);
+
+}
  }
 
  const best = analysis || scan?.best;
