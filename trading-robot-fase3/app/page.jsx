@@ -253,9 +253,15 @@ export default function Page(){
          display:'grid',placeItems:'center',fontSize:28,fontWeight:900,margin:'8px auto'
         }}>{confidence(best)}%</div>
 
-        <div style={{textAlign:'center',marginTop:10,color:'#22c55e',fontWeight:800,fontSize:18}}>
-         Probabilidad: {best?.probability || 0}%
-        </div>
+       <div style={{textAlign:'center',marginTop:10}}>
+  <div style={{color:'#22c55e',fontWeight:900,fontSize:18}}>
+    Probabilidad Bajista: {best?.probability || 0}%
+  </div>
+
+  <div style={{color:'#94a3b8',fontWeight:700,fontSize:15,marginTop:4}}>
+    Probabilidad Alcista: {100 - (best?.probability || 0)}%
+  </div>
+</div>
        </div>
 
        <div style={{
