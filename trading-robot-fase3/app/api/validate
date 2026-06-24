@@ -204,7 +204,7 @@ function validateSignal(signal, rows) {
     }
   }
 
-  if (directionalMove > 0) {
+  if (directionalMove >= 0.15) {
     return {
       ...signal,
       symbol,
