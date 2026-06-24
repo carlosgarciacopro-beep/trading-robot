@@ -24,6 +24,7 @@ export default function Page(){
  useEffect(()=>{
   const saved=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
   setHistory(saved);
+  validateHistory(saved);
  },[]);
 
  useEffect(()=>bottom.current?.scrollIntoView({behavior:'smooth'}),[analysis,scan,loading]);
@@ -68,6 +69,30 @@ export default function Page(){
   return Math.min(100, Math.max(45, a.confidence || (50 + Math.abs(a.score||0)*10)));
  }
 
+ async function validateHistory(currentHistory){
+  if(!currentHistory || currentHistory.length===0)return currentHistory;
+
+  try{
+   const r=await fetch('/api/validate',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({signals:currentHistory})
+   });
+
+   const d=await r.json();
+   if(!r.ok)throw new Error(d.error);
+
+   const validated=d.results || currentHistory;
+   localStorage.setItem('nexoraHistory',JSON.stringify(validated));
+   setHistory(validated);
+
+   return validated;
+  }catch(e){
+   console.log('Error validando historial:',e.message);
+   return currentHistory;
+  }
+ }
+
  async function analyze(sym){
   sym=(sym||ticker).trim().toUpperCase();
   if(!sym||loading)return;
@@ -81,30 +106,31 @@ export default function Page(){
 
    setAnalysis(d.analysis);
 
- const savedHistory = JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
+   const savedHistory=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-const isCall = d.analysis.side === 'CALL';
-const isPut = d.analysis.side === 'PUT';
+   const isCall=d.analysis.side==='CALL';
+   const isPut=d.analysis.side==='PUT';
 
-const newSignal = {
-  date: new Date().toLocaleString(),
-  symbol: d.analysis.symbol,
-  side: d.analysis.side,
-  mode: d.analysis.mode || mode,
-  price: d.analysis.close,
-  entry: isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
-  stop: isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
-  target1: d.analysis.levels?.target1,
-  target2: d.analysis.levels?.target2,
-  probability: d.analysis.probability,
-  score: d.analysis.score,
-  status: 'PENDIENTE'
-};
+   const newSignal={
+    date:new Date().toLocaleString(),
+    symbol:d.analysis.symbol,
+    side:d.analysis.side,
+    mode:d.analysis.mode || mode,
+    price:d.analysis.close,
+    entry:isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
+    stop:isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
+    target1:d.analysis.levels?.target1,
+    target2:d.analysis.levels?.target2,
+    probability:d.analysis.probability,
+    score:d.analysis.score,
+    status:'PENDIENTE'
+   };
 
-const updatedHistory = [newSignal, ...savedHistory].slice(0,100);
+   const updatedHistory=[newSignal,...savedHistory].slice(0,100);
 
-localStorage.setItem('nexoraHistory', JSON.stringify(updatedHistory));
-setHistory(updatedHistory);
+   localStorage.setItem('nexoraHistory',JSON.stringify(updatedHistory));
+   setHistory(updatedHistory);
+   validateHistory(updatedHistory);
 
   }catch(e){
    alert('Error: '+e.message)
@@ -130,6 +156,11 @@ setHistory(updatedHistory);
  }
 
  const best = analysis || scan?.best;
+
+ const ganadas=history.filter(h=>h.validationStatus==='GANADA' || h.status==='GANADA').length;
+ const perdidas=history.filter(h=>h.validationStatus==='PERDIDA' || h.status==='PERDIDA').length;
+ const pendientes=history.filter(h=>h.validationStatus==='PENDIENTE' || h.status==='PENDIENTE').length;
+ const efectividad=ganadas+perdidas>0 ? Math.round((ganadas/(ganadas+perdidas))*100) : 0;
 
  return <main style={{
   fontFamily:'Inter, system-ui, Arial',
@@ -222,13 +253,7 @@ setHistory(updatedHistory);
          display:'grid',placeItems:'center',fontSize:28,fontWeight:900,margin:'8px auto'
         }}>{confidence(best)}%</div>
 
-        <div style={{
-         textAlign:'center',
-         marginTop:10,
-         color:'#22c55e',
-         fontWeight:800,
-         fontSize:18
-        }}>
+        <div style={{textAlign:'center',marginTop:10,color:'#22c55e',fontWeight:800,fontSize:18}}>
          Probabilidad: {best?.probability || 0}%
         </div>
        </div>
@@ -237,9 +262,7 @@ setHistory(updatedHistory);
         height:220,border:'1px solid #334155',borderRadius:18,
         display:'grid',placeItems:'center',color:'#94a3b8',
         background:'linear-gradient(180deg,rgba(15,23,42,.9),rgba(2,6,23,.9))',
-        whiteSpace:'pre-line',
-        textAlign:'center',
-        padding:15
+        whiteSpace:'pre-line',textAlign:'center',padding:15
        }}>
 {`MULTI-TIMEFRAME
 
@@ -277,19 +300,7 @@ Consenso: 75%`}
        <table style={{width:'100%',borderCollapse:'collapse'}}>
         <thead>
          <tr style={{color:'#94a3b8',textAlign:'left'}}>
-          <th>🏆</th>
-          <th>Activo</th>
-          <th>Señal</th>
-          <th>Entrada</th>
-          <th>Target 1</th>
-          <th>Target 2</th>
-          <th>R/R</th>
-          <th>Score</th>
-          <th>RSI</th>
-          <th>MACD</th>
-          <th>Confianza</th>
-          <th>Stop</th>
-          <th>Estado</th>
+          <th>🏆</th><th>Activo</th><th>Señal</th><th>Entrada</th><th>Target 1</th><th>Target 2</th><th>R/R</th><th>Score</th><th>RSI</th><th>MACD</th><th>Confianza</th><th>Stop</th><th>Estado</th>
          </tr>
         </thead>
         <tbody>
@@ -319,14 +330,8 @@ Consenso: 75%`}
        {best.symbol} obtiene score <b>{best.score}</b> porque el sistema detecta:
        {' '}{best.reasons?.join(' · ') || 'tendencia, momentum, volumen y niveles técnicos relevantes.'}
       </p>
-      <p>
-       <b>Entrada CALL:</b> arriba de {best.levels?.entryCall} · 
-       <b> Entrada PUT:</b> abajo de {best.levels?.entryPut}
-      </p>
-      <p>
-       <b>Stop CALL:</b> {best.levels?.stopCall} · 
-       <b> Stop PUT:</b> {best.levels?.stopPut}
-      </p>
+      <p><b>Entrada CALL:</b> arriba de {best.levels?.entryCall} · <b> Entrada PUT:</b> abajo de {best.levels?.entryPut}</p>
+      <p><b>Stop CALL:</b> {best.levels?.stopCall} · <b> Stop PUT:</b> {best.levels?.stopPut}</p>
      </Card>}
 
      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(4,1fr)',gap:14}}>
@@ -336,8 +341,10 @@ Consenso: 75%`}
       <Card>
        <h3>Stats Robot</h3>
        <p>Señales guardadas: {history.length}</p>
-       <p>Ganadas: --</p>
-       <p>Perdidas: --</p>
+       <p>Ganadas: {ganadas}</p>
+       <p>Perdidas: {perdidas}</p>
+       <p>Pendientes: {pendientes}</p>
+       <p>Efectividad: {efectividad}%</p>
       </Card>
      </div>
 
@@ -350,31 +357,22 @@ Consenso: 75%`}
         <table style={{width:'100%',borderCollapse:'collapse'}}>
          <thead>
           <tr style={{color:'#94a3b8',textAlign:'left'}}>
-           <th>Fecha</th>
-           <th>Ticker</th>
-           <th>Señal</th>
-           <th>Modo</th>
-<th>Entrada</th>
-<th>Stop</th>
-<th>Target</th>
-<th>Probabilidad</th>
-<th>Score</th>
-<th>Estado</th>
+           <th>Fecha</th><th>Ticker</th><th>Señal</th><th>Modo</th><th>Entrada</th><th>Stop</th><th>Target</th><th>Probabilidad</th><th>Score</th><th>Estado</th>
           </tr>
          </thead>
          <tbody>
           {history.slice(0,10).map((h,i)=>(
            <tr key={i} style={{borderTop:'1px solid #334155'}}>
-            <td style={{padding:10}}>{h.date}</td>
+            <td style={{padding:10}}>{h.date || h.signalDate}</td>
             <td style={{fontWeight:900}}>{h.symbol}</td>
             <td>{h.side}</td>
             <td>{h.mode}</td>
-<td>{h.entry || '-'}</td>
-<td>{h.stop || '-'}</td>
-<td>{h.target1 || '-'}</td>
-<td>{h.probability}%</td>
-<td style={{fontWeight:900,color:getColor(h.score)}}>{h.score}</td>
-<td>{h.status}</td>
+            <td>{h.entry || h.entryPrice || '-'}</td>
+            <td>{h.stop || '-'}</td>
+            <td>{h.target1 || h.target || '-'}</td>
+            <td>{h.probability}%</td>
+            <td style={{fontWeight:900,color:getColor(h.score)}}>{h.score}</td>
+            <td>{h.result || h.validationStatus || h.status}</td>
            </tr>
           ))}
          </tbody>
@@ -389,30 +387,11 @@ Consenso: 75%`}
      <Card>
       <h3>GUÍA DEL SCORE</h3>
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
-       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:18,height:18,borderRadius:'50%',background:'#22c55e'}}></div>
-        <span>+4 a +5 CALL FUERTE</span>
-       </div>
-
-       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:18,height:18,borderRadius:'50%',background:'#84cc16'}}></div>
-        <span>+2 a +3 CALL MODERADO</span>
-       </div>
-
-       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:18,height:18,borderRadius:'50%',background:'#eab308'}}></div>
-        <span>-1 a +1 NEUTRAL</span>
-       </div>
-
-       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:18,height:18,borderRadius:'50%',background:'#f97316'}}></div>
-        <span>-2 a -3 PUT MODERADO</span>
-       </div>
-
-       <div style={{display:'flex',alignItems:'center',gap:10}}>
-        <div style={{width:18,height:18,borderRadius:'50%',background:'#ef4444'}}></div>
-        <span>-4 a -5 PUT FUERTE</span>
-       </div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:18,borderRadius:'50%',background:'#22c55e'}}></div><span>+4 a +5 CALL FUERTE</span></div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:18,borderRadius:'50%',background:'#84cc16'}}></div><span>+2 a +3 CALL MODERADO</span></div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:18,borderRadius:'50%',background:'#eab308'}}></div><span>-1 a +1 NEUTRAL</span></div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:18,borderRadius:'50%',background:'#f97316'}}></div><span>-2 a -3 PUT MODERADO</span></div>
+       <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:18,height:18,borderRadius:'50%',background:'#ef4444'}}></div><span>-4 a -5 PUT FUERTE</span></div>
       </div>
      </Card>
 
