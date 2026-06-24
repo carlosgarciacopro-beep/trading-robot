@@ -262,6 +262,26 @@ export default function Page(){
     Probabilidad Alcista: {100 - (best?.probability || 0)}%
   </div>
 </div>
+        <div
+  style={{
+    width:'100%',
+    maxWidth:220,
+    height:14,
+    background:'#1e293b',
+    borderRadius:999,
+    margin:'12px auto'
+  }}
+>
+  <div
+    style={{
+      width:`${best?.probability || 0}%`,
+      height:'100%',
+      background:'#ef4444',
+      borderRadius:999,
+      transition:'all .4s'
+    }}
+  />
+</div>
        </div>
 
        <div style={{
