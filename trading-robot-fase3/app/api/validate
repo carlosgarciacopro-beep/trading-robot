@@ -3,39 +3,53 @@ import { fetchRows } from '../analyze/route.js';
 function getPriceEntry(signal) {
   const side = signal.side;
 
-  if (signal.entryPrice) return signal.entryPrice;
-  if (signal.entry) return signal.entry;
-  if (signal.close) return signal.close;
-  if (signal.currentPrice) return signal.currentPrice;
+  if (signal.entryPrice) return Number(signal.entryPrice);
+  if (signal.entry) return Number(signal.entry);
+  if (signal.close) return Number(signal.close);
+  if (signal.currentPrice) return Number(signal.currentPrice);
 
-  if (side === 'CALL') return signal.levels?.entryCall;
-  if (side === 'PUT') return signal.levels?.entryPut;
+  if (side === 'CALL') return Number(signal.levels?.entryCall);
+  if (side === 'PUT') return Number(signal.levels?.entryPut);
 
   return null;
 }
 
 function getStop(signal) {
-  if (signal.stop) return signal.stop;
+  if (signal.stop) return Number(signal.stop);
 
-  if (signal.side === 'CALL') return signal.levels?.stopCall;
-  if (signal.side === 'PUT') return signal.levels?.stopPut;
+  if (signal.side === 'CALL') return Number(signal.levels?.stopCall);
+  if (signal.side === 'PUT') return Number(signal.levels?.stopPut);
 
   return null;
 }
 
 function getTarget(signal) {
-  if (signal.target) return signal.target;
-  if (signal.target1) return signal.target1;
+  if (signal.target) return Number(signal.target);
+  if (signal.target1) return Number(signal.target1);
 
   if (signal.side === 'CALL') {
-    return signal.levels?.targetCall || signal.levels?.target1;
+    return Number(signal.levels?.targetCall || signal.levels?.target1);
   }
 
   if (signal.side === 'PUT') {
-    return signal.levels?.targetPut || signal.levels?.target1;
+    return Number(signal.levels?.targetPut || signal.levels?.target1);
   }
 
   return null;
+}
+
+function getDirectionalMove(side, entryPrice, currentPrice) {
+  if (!entryPrice || !currentPrice) return 0;
+
+  if (side === 'CALL') {
+    return ((currentPrice - entryPrice) / entryPrice) * 100;
+  }
+
+  if (side === 'PUT') {
+    return ((entryPrice - currentPrice) / entryPrice) * 100;
+  }
+
+  return 0;
 }
 
 function validateSignal(signal, rows) {
@@ -53,6 +67,10 @@ function validateSignal(signal, rows) {
   const currentPrice = lastRow?.close || null;
   const lastConsultDate = lastRow?.time || null;
 
+  const directionalMove = Number(
+    getDirectionalMove(side, entryPrice, currentPrice).toFixed(2)
+  );
+
   if (!symbol || !side || side === 'NEUTRAL') {
     return {
       ...signal,
@@ -64,9 +82,11 @@ function validateSignal(signal, rows) {
       entryPrice,
       stop,
       target,
+      directionalMove,
       validationStatus: 'PENDIENTE',
       result: '⏳ PENDIENTE',
       validationReason: 'Señal neutral o sin dirección clara',
+      lastValidation: new Date().toLocaleString(),
     };
   }
 
@@ -81,9 +101,11 @@ function validateSignal(signal, rows) {
       entryPrice,
       stop,
       target,
+      directionalMove,
       validationStatus: 'PENDIENTE',
       result: '⏳ PENDIENTE',
       validationReason: 'Faltan niveles de entrada, stop o target',
+      lastValidation: new Date().toLocaleString(),
     };
   }
 
@@ -105,11 +127,13 @@ function validateSignal(signal, rows) {
           entryPrice,
           stop,
           target,
+          directionalMove,
           validationStatus: 'PERDIDA',
           result: '❌ PERDIDA',
           exitPrice: stop,
           validationTime: row.time,
           validationReason: 'Tocó stop antes del target',
+          lastValidation: new Date().toLocaleString(),
         };
       }
 
@@ -124,11 +148,13 @@ function validateSignal(signal, rows) {
           entryPrice,
           stop,
           target,
+          directionalMove,
           validationStatus: 'GANADA',
           result: '✅ GANADA',
           exitPrice: target,
           validationTime: row.time,
           validationReason: 'Tocó target antes del stop',
+          lastValidation: new Date().toLocaleString(),
         };
       }
     }
@@ -145,11 +171,13 @@ function validateSignal(signal, rows) {
           entryPrice,
           stop,
           target,
+          directionalMove,
           validationStatus: 'PERDIDA',
           result: '❌ PERDIDA',
           exitPrice: stop,
           validationTime: row.time,
           validationReason: 'Tocó stop antes del target',
+          lastValidation: new Date().toLocaleString(),
         };
       }
 
@@ -164,14 +192,37 @@ function validateSignal(signal, rows) {
           entryPrice,
           stop,
           target,
+          directionalMove,
           validationStatus: 'GANADA',
           result: '✅ GANADA',
           exitPrice: target,
           validationTime: row.time,
           validationReason: 'Tocó target antes del stop',
+          lastValidation: new Date().toLocaleString(),
         };
       }
     }
+  }
+
+  if (directionalMove > 0) {
+    return {
+      ...signal,
+      symbol,
+      mode,
+      signalDate,
+      lastConsultDate,
+      currentPrice,
+      entryPrice,
+      stop,
+      target,
+      directionalMove,
+      validationStatus: 'ACERTO_DIRECCION',
+      result: '🟡 ACERTÓ DIRECCIÓN',
+      exitPrice: null,
+      validationTime: null,
+      validationReason: `Se movió a favor ${directionalMove}% pero aún no toca target`,
+      lastValidation: new Date().toLocaleString(),
+    };
   }
 
   return {
@@ -184,11 +235,13 @@ function validateSignal(signal, rows) {
     entryPrice,
     stop,
     target,
+    directionalMove,
     validationStatus: 'PENDIENTE',
     result: '⏳ PENDIENTE',
     exitPrice: null,
     validationTime: null,
     validationReason: 'Aún no toca stop ni target',
+    lastValidation: new Date().toLocaleString(),
   };
 }
 
@@ -232,6 +285,7 @@ export async function POST(req) {
           validationStatus: 'PENDIENTE',
           result: '⏳ PENDIENTE',
           validationReason: 'La señal no tiene símbolo',
+          lastValidation: new Date().toLocaleString(),
         });
         continue;
       }
@@ -244,34 +298,34 @@ export async function POST(req) {
 
     const total = results.length;
     const ganadas = results.filter((r) => r.validationStatus === 'GANADA').length;
+    const acertoDireccion = results.filter(
+      (r) => r.validationStatus === 'ACERTO_DIRECCION'
+    ).length;
     const perdidas = results.filter((r) => r.validationStatus === 'PERDIDA').length;
     const pendientes = results.filter((r) => r.validationStatus === 'PENDIENTE').length;
 
-    const totalCerradas = ganadas + perdidas;
+    const cerradasTarget = ganadas + perdidas;
+    const conDireccion = ganadas + acertoDireccion + perdidas;
 
-    const efectividad =
-      totalCerradas > 0 ? Math.round((ganadas / totalCerradas) * 100) : 0;
+    const efectividadTarget =
+      cerradasTarget > 0 ? Math.round((ganadas / cerradasTarget) * 100) : 0;
 
-    const swing = results.filter((r) => r.mode === 'swing');
-    const intraday = results.filter((r) => r.mode === 'intraday');
-
-    const calcEffectiveness = (arr) => {
-      const w = arr.filter((r) => r.validationStatus === 'GANADA').length;
-      const l = arr.filter((r) => r.validationStatus === 'PERDIDA').length;
-      return w + l > 0 ? Math.round((w / (w + l)) * 100) : 0;
-    };
+    const precisionDireccional =
+      conDireccion > 0
+        ? Math.round(((ganadas + acertoDireccion) / conDireccion) * 100)
+        : 0;
 
     return Response.json({
       results,
       stats: {
         total,
         ganadas,
+        acertoDireccion,
         perdidas,
         pendientes,
-        cerradas: totalCerradas,
-        efectividad,
-        efectividadSwing: calcEffectiveness(swing),
-        efectividadIntraday: calcEffectiveness(intraday),
+        cerradasTarget,
+        efectividadTarget,
+        precisionDireccional,
         lastValidationDate: new Date().toISOString(),
       },
       disclaimer: 'Validación educativa; no es consejo financiero oficial.',
