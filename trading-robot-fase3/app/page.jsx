@@ -339,13 +339,33 @@ Consenso: 75%`}
       <Card><h3>Eventos Económicos</h3><p>CPI · PPI · FOMC</p></Card>
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
       <Card>
-       <h3>Stats Robot</h3>
-       <p>Señales guardadas: {history.length}</p>
-       <p>Ganadas: {ganadas}</p>
-       <p>Perdidas: {perdidas}</p>
-       <p>Pendientes: {pendientes}</p>
-       <p>Efectividad: {efectividad}%</p>
-      </Card>
+       <Card>
+ <h3>Stats Robot</h3>
+
+ <p>Señales guardadas: {history.length}</p>
+ <p>Ganadas: {ganadas}</p>
+ <p>Perdidas: {perdidas}</p>
+ <p>Pendientes: {pendientes}</p>
+ <p>Efectividad: {efectividad}%</p>
+
+ <button
+  onClick={()=>validateHistory(history)}
+  style={{
+   marginTop:12,
+   background:'#22c55e',
+   color:'#03150a',
+   border:0,
+   borderRadius:10,
+   padding:'10px 14px',
+   fontWeight:900,
+   cursor:'pointer',
+   width:'100%'
+  }}
+ >
+  VALIDAR HISTORIAL
+ </button>
+
+</Card>
      </div>
 
      <Card>
