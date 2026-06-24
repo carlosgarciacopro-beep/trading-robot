@@ -341,7 +341,7 @@ Consenso: 75%`}
       <Card>
        <Card>
  <Card>
- <h3>Stats Robot</h3>
+ <h3>Stats Robot Nexora</h3>
 
  <p>Señales guardadas: {history.length}</p>
  <p>Ganadas: {ganadas}</p>
