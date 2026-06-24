@@ -318,7 +318,47 @@ Consenso: 75%`}
       </Card>
      </div>
 
-     {loading && <Card>⏳ Analizando...</Card>}
+     {loading && (
+
+<Card>
+
+<h3>🤖 IA Nexora</h3>
+
+<div style={{
+fontSize:18,
+fontWeight:800,
+color:"#38ef7d",
+marginBottom:10
+}}>
+Analizando mercado...
+</div>
+
+<div style={{
+height:16,
+background:"#23314a",
+borderRadius:10,
+overflow:"hidden"
+}}>
+
+<div style={{
+width:"100%",
+height:"100%",
+background:"linear-gradient(90deg,#38ef7d,#00c853)",
+animation:"pulse 1s infinite"
+}}/>
+
+</div>
+
+<p style={{
+marginTop:10,
+color:"#94a3b8"
+}}>
+Calculando EMA • RSI • MACD • Volumen • Tendencia
+</p>
+
+</Card>
+
+)}
 
      {scan && <Card>
       <h2>RANKING DE MEJORES SETUPS</h2>
