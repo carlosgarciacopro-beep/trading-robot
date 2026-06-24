@@ -339,7 +339,7 @@ Consenso: 75%`}
       <Card><h3>Eventos Económicos</h3><p>CPI · PPI · FOMC</p></Card>
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
       <Card>
-       <h3>Stats Robot Nexora</h3>
+       <h3>Stats Robot Nexora ✅</h3>
        <p>Señales guardadas: {history.length}</p>
        <p>Ganadas: {ganadas}</p>
        <p>Perdidas: {perdidas}</p>
