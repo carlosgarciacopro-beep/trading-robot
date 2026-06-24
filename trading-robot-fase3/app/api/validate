@@ -1,1 +1,282 @@
+import { fetchRows } from '../analyze/route.js';
 
+function getPriceEntry(signal) {
+  const side = signal.side;
+
+  if (signal.entryPrice) return signal.entryPrice;
+  if (signal.entry) return signal.entry;
+  if (signal.close) return signal.close;
+  if (signal.currentPrice) return signal.currentPrice;
+
+  if (side === 'CALL') return signal.levels?.entryCall;
+  if (side === 'PUT') return signal.levels?.entryPut;
+
+  return null;
+}
+
+function getStop(signal) {
+  if (signal.stop) return signal.stop;
+
+  if (signal.side === 'CALL') return signal.levels?.stopCall;
+  if (signal.side === 'PUT') return signal.levels?.stopPut;
+
+  return null;
+}
+
+function getTarget(signal) {
+  if (signal.target) return signal.target;
+  if (signal.target1) return signal.target1;
+
+  if (signal.side === 'CALL') {
+    return signal.levels?.targetCall || signal.levels?.target1;
+  }
+
+  if (signal.side === 'PUT') {
+    return signal.levels?.targetPut || signal.levels?.target1;
+  }
+
+  return null;
+}
+
+function validateSignal(signal, rows) {
+  const side = signal.side;
+  const symbol = signal.symbol;
+  const mode = signal.mode || 'swing';
+
+  const signalDate = signal.time || signal.date || signal.createdAt || null;
+
+  const entryPrice = getPriceEntry(signal);
+  const stop = getStop(signal);
+  const target = getTarget(signal);
+
+  const lastRow = rows[rows.length - 1];
+  const currentPrice = lastRow?.close || null;
+  const lastConsultDate = lastRow?.time || null;
+
+  if (!symbol || !side || side === 'NEUTRAL') {
+    return {
+      ...signal,
+      symbol,
+      mode,
+      signalDate,
+      lastConsultDate,
+      currentPrice,
+      entryPrice,
+      stop,
+      target,
+      validationStatus: 'PENDIENTE',
+      result: '⏳ PENDIENTE',
+      validationReason: 'Señal neutral o sin dirección clara',
+    };
+  }
+
+  if (!entryPrice || !stop || !target) {
+    return {
+      ...signal,
+      symbol,
+      mode,
+      signalDate,
+      lastConsultDate,
+      currentPrice,
+      entryPrice,
+      stop,
+      target,
+      validationStatus: 'PENDIENTE',
+      result: '⏳ PENDIENTE',
+      validationReason: 'Faltan niveles de entrada, stop o target',
+    };
+  }
+
+  const afterRows = rows.filter((r) => {
+    if (!signalDate) return true;
+    return new Date(r.time) >= new Date(signalDate);
+  });
+
+  for (const row of afterRows) {
+    if (side === 'CALL') {
+      if (row.low <= stop) {
+        return {
+          ...signal,
+          symbol,
+          mode,
+          signalDate,
+          lastConsultDate,
+          currentPrice,
+          entryPrice,
+          stop,
+          target,
+          validationStatus: 'PERDIDA',
+          result: '❌ PERDIDA',
+          exitPrice: stop,
+          validationTime: row.time,
+          validationReason: 'Tocó stop antes del target',
+        };
+      }
+
+      if (row.high >= target) {
+        return {
+          ...signal,
+          symbol,
+          mode,
+          signalDate,
+          lastConsultDate,
+          currentPrice,
+          entryPrice,
+          stop,
+          target,
+          validationStatus: 'GANADA',
+          result: '✅ GANADA',
+          exitPrice: target,
+          validationTime: row.time,
+          validationReason: 'Tocó target antes del stop',
+        };
+      }
+    }
+
+    if (side === 'PUT') {
+      if (row.high >= stop) {
+        return {
+          ...signal,
+          symbol,
+          mode,
+          signalDate,
+          lastConsultDate,
+          currentPrice,
+          entryPrice,
+          stop,
+          target,
+          validationStatus: 'PERDIDA',
+          result: '❌ PERDIDA',
+          exitPrice: stop,
+          validationTime: row.time,
+          validationReason: 'Tocó stop antes del target',
+        };
+      }
+
+      if (row.low <= target) {
+        return {
+          ...signal,
+          symbol,
+          mode,
+          signalDate,
+          lastConsultDate,
+          currentPrice,
+          entryPrice,
+          stop,
+          target,
+          validationStatus: 'GANADA',
+          result: '✅ GANADA',
+          exitPrice: target,
+          validationTime: row.time,
+          validationReason: 'Tocó target antes del stop',
+        };
+      }
+    }
+  }
+
+  return {
+    ...signal,
+    symbol,
+    mode,
+    signalDate,
+    lastConsultDate,
+    currentPrice,
+    entryPrice,
+    stop,
+    target,
+    validationStatus: 'PENDIENTE',
+    result: '⏳ PENDIENTE',
+    exitPrice: null,
+    validationTime: null,
+    validationReason: 'Aún no toca stop ni target',
+  };
+}
+
+export async function POST(req) {
+  try {
+    const body = await req.json();
+
+    const key =
+      process.env.ALPHA_VANTAGE_API_KEY ||
+      process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;
+
+    if (!key) {
+      return Response.json(
+        { error: 'Falta ALPHA_VANTAGE_API_KEY' },
+        { status: 500 }
+      );
+    }
+
+    const signals = Array.isArray(body.signals)
+      ? body.signals
+      : body.signal
+      ? [body.signal]
+      : [];
+
+    if (!signals.length) {
+      return Response.json(
+        { error: 'No se recibieron señales para validar' },
+        { status: 400 }
+      );
+    }
+
+    const results = [];
+
+    for (const signal of signals) {
+      const symbol = signal.symbol;
+      const mode = signal.mode || 'swing';
+
+      if (!symbol) {
+        results.push({
+          ...signal,
+          validationStatus: 'PENDIENTE',
+          result: '⏳ PENDIENTE',
+          validationReason: 'La señal no tiene símbolo',
+        });
+        continue;
+      }
+
+      const rows = await fetchRows(symbol, key, mode);
+      const validated = validateSignal(signal, rows);
+
+      results.push(validated);
+    }
+
+    const total = results.length;
+    const ganadas = results.filter((r) => r.validationStatus === 'GANADA').length;
+    const perdidas = results.filter((r) => r.validationStatus === 'PERDIDA').length;
+    const pendientes = results.filter((r) => r.validationStatus === 'PENDIENTE').length;
+
+    const totalCerradas = ganadas + perdidas;
+
+    const efectividad =
+      totalCerradas > 0 ? Math.round((ganadas / totalCerradas) * 100) : 0;
+
+    const swing = results.filter((r) => r.mode === 'swing');
+    const intraday = results.filter((r) => r.mode === 'intraday');
+
+    const calcEffectiveness = (arr) => {
+      const w = arr.filter((r) => r.validationStatus === 'GANADA').length;
+      const l = arr.filter((r) => r.validationStatus === 'PERDIDA').length;
+      return w + l > 0 ? Math.round((w / (w + l)) * 100) : 0;
+    };
+
+    return Response.json({
+      results,
+      stats: {
+        total,
+        ganadas,
+        perdidas,
+        pendientes,
+        cerradas: totalCerradas,
+        efectividad,
+        efectividadSwing: calcEffectiveness(swing),
+        efectividadIntraday: calcEffectiveness(intraday),
+        lastValidationDate: new Date().toISOString(),
+      },
+      disclaimer: 'Validación educativa; no es consejo financiero oficial.',
+    });
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 400 });
+  }
+}
