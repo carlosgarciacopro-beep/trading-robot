@@ -22,18 +22,19 @@ export async function GET(req) {
 
     for (const sym of list) {
       try {
-        const rows = await fetchRows(sym, key);
+        const data = await fetchRows(sym, key, 'swing');
+const rows = data.main;
 
-        if (!rows || rows.length < 20) {
-          results.push({
-            symbol: sym,
-            error: 'Datos insuficientes o límite de Alpha Vantage',
-            score: 0,
-            signal: 'SIN DATOS',
-          });
-        } else {
-          results.push(analyzeRows(sym, rows));
-        }
+if (!rows || rows.length < 20) {
+  results.push({
+    symbol: sym,
+    error: 'Datos insuficientes o límite de Alpha Vantage',
+    score: 0,
+    signal: 'SIN DATOS',
+  });
+} else {
+  results.push(analyzeRows(sym, rows, 'swing'));
+}
 
         await wait(15000);
       } catch (e) {
