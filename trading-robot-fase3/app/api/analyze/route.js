@@ -188,40 +188,7 @@ async function fetchRows(symbol,key,mode='swing'){
     m5
   };
 }
-  const isIntraday = mode === 'intraday';
 
-  const functionName = isIntraday ? 'TIME_SERIES_INTRADAY' : 'TIME_SERIES_DAILY';
-  const interval = isIntraday ? '&interval=5min' : '';
-  const outputsize = 'compact';
-
-  const url=`https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}${interval}&outputsize=${outputsize}&apikey=${key}`;
-
-  const res=await fetch(url,{cache:'no-store'});
-  const data=await res.json();
-
-  if(data.Note || data.Information){
-    throw new Error(data.Note || data.Information);
-  }
-
-  if(data["Error Message"]){
-    throw new Error(data["Error Message"]);
-  }
-
-  const raw=data["Time Series (5min)"] || data["Time Series (Daily)"];
-
-  if(raw){
-    return Object.entries(raw).reverse().map(([time,v])=>({
-      time,
-      open:+v["1. open"],
-      high:+v["2. high"],
-      low:+v["3. low"],
-      close:+v["4. close"],
-      volume:+v["5. volume"]
-    }));
-  }
-
-  throw new Error("Alpha Vantage no devolvió datos para "+symbol);
-}
 
 export async function GET(req){
   try{
