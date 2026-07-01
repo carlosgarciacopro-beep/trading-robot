@@ -137,7 +137,57 @@ function analyzeRows(symbol, rows, mode='swing'){
   };
 }
 
+async function fetchRowsByFunction(symbol,key,functionName,interval=''){
+  const intervalParam = interval ? `&interval=${interval}` : '';
+  const url=`https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}${intervalParam}&outputsize=compact&apikey=${key}`;
+
+  const res=await fetch(url,{cache:'no-store'});
+  const data=await res.json();
+
+  if(data.Note || data.Information) throw new Error(data.Note || data.Information);
+  if(data["Error Message"]) throw new Error(data["Error Message"]);
+
+  const raw =
+    data[`Time Series (${interval})`] ||
+    data["Time Series (Daily)"];
+
+  if(!raw) throw new Error("Alpha Vantage no devolvió datos para "+symbol);
+
+  return Object.entries(raw).reverse().map(([time,v])=>({
+    time,
+    open:+v["1. open"],
+    high:+v["2. high"],
+    low:+v["3. low"],
+    close:+v["4. close"],
+    volume:+v["5. volume"]
+  }));
+}
+
 async function fetchRows(symbol,key,mode='swing'){
+  const daily = await fetchRowsByFunction(symbol,key,'TIME_SERIES_DAILY');
+
+  if(mode !== 'intraday'){
+    return {
+      main: daily,
+      daily,
+      h1: null,
+      m15: null,
+      m5: null
+    };
+  }
+
+  const m5 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','5min');
+  const m15 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','15min');
+  const h1 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','60min');
+
+  return {
+    main: m5,
+    daily,
+    h1,
+    m15,
+    m5
+  };
+}
   const isIntraday = mode === 'intraday';
 
   const functionName = isIntraday ? 'TIME_SERIES_INTRADAY' : 'TIME_SERIES_DAILY';
@@ -182,8 +232,20 @@ export async function GET(req){
     const key=process.env.ALPHA_VANTAGE_API_KEY || process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;
     if(!key)return Response.json({error:'Falta ALPHA_VANTAGE_API_KEY'},{status:500});
 
-    const rows=await fetchRows(symbol,key,mode);
-    const analysis=analyzeRows(symbol,rows,mode);
+    const data=await fetchRows(symbol,key,mode);
+
+const analysis=analyzeRows(symbol,data.main,mode);
+
+if(mode === 'intraday'){
+  analysis.multiTimeframe = {
+    diario: analyzeRows(symbol,data.daily,'swing'),
+    h1: analyzeRows(symbol,data.h1,'intraday'),
+    m15: analyzeRows(symbol,data.m15,'intraday'),
+    m5: analyzeRows(symbol,data.m5,'intraday')
+  };
+
+  analysis.priceSource = 'INTRADÍA 5MIN + confirmación 15MIN / 1H / Diario';
+}
 
     return Response.json({
       analysis,
