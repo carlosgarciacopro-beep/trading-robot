@@ -158,39 +158,40 @@ async function fetchYahooRows(symbol, interval = '1d', range = '6mo') {
     throw new Error("Datos incompletos de Yahoo Finance para " + symbol);
   }
 
-  const rows = timestamps.map((t, i) => ({
-    time: new Date(t * 1000).toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour12: false
-    }),
-    open: quote.open[i],
-    high: quote.high[i],
-    low: quote.low[i],
-    close: quote.close[i],
-    volume: quote.volume[i] || 0
-  }))
-  .filter(x =>
-    x.open != null &&
-    x.high != null &&
-    x.low != null &&
-    x.close != null
-  );
+  const rows = timestamps
+    .map((t, i) => ({
+      time: new Date(t * 1000).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false
+      }),
+      open: quote.open[i],
+      high: quote.high[i],
+      low: quote.low[i],
+      close: quote.close[i],
+      volume: quote.volume[i] || 0
+    }))
+    .filter(x =>
+      x.open != null &&
+      x.high != null &&
+      x.low != null &&
+      x.close != null
+    );
 
   const lastRow = rows[rows.length - 1];
 
-  const livePrice =
-    meta.postMarketPrice ??
-    meta.preMarketPrice ??
-    meta.regularMarketPrice ??
-    lastRow.close;
+  if (lastRow) {
+    const livePrice =
+      meta.postMarketPrice ??
+      meta.preMarketPrice ??
+      meta.regularMarketPrice ??
+      lastRow.close;
 
-  const liveTime =
-    meta.postMarketTime ??
-    meta.preMarketTime ??
-    meta.regularMarketTime ??
-    null;
+    const liveTime =
+      meta.postMarketTime ??
+      meta.preMarketTime ??
+      meta.regularMarketTime ??
+      null;
 
-  if (lastRow && livePrice) {
     lastRow.close = livePrice;
     lastRow.high = Math.max(lastRow.high, livePrice);
     lastRow.low = Math.min(lastRow.low, livePrice);
@@ -207,47 +208,8 @@ async function fetchYahooRows(symbol, interval = '1d', range = '6mo') {
 
   return rows;
 }
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`;
 
-  const res = await fetch(url, {
-    cache: 'no-store',
-    headers: {
-      'User-Agent': 'Mozilla/5.0'
-    }
-  });
-
-  const data = await res.json();
-
-  const result = data?.chart?.result?.[0];
-  if (!result) throw new Error("Yahoo Finance no devolvió datos para " + symbol);
-
-  const timestamps = result.timestamp || [];
-  const quote = result.indicators?.quote?.[0];
-
-  if (!quote || !timestamps.length) {
-    throw new Error("Datos incompletos de Yahoo Finance para " + symbol);
-  }
-
-  return timestamps.map((t, i) => ({
-    time: new Date(t * 1000).toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      hour12: false
-    }),
-    open: quote.open[i],
-    high: quote.high[i],
-    low: quote.low[i],
-    close: quote.close[i],
-    volume: quote.volume[i] || 0
-  }))
-  .filter(x =>
-    x.open != null &&
-    x.high != null &&
-    x.low != null &&
-    x.close != null
-  );
-}
-
-async function fetchRows(symbol, key = null, mode = 'swing') {
+async function fetchRows(symbol, _key = null, mode = 'swing') {
   const daily = await fetchYahooRows(symbol, '1d', '6mo');
 
   if (mode !== 'intraday') {
@@ -271,10 +233,7 @@ async function fetchRows(symbol, key = null, mode = 'swing') {
     m15,
     m5
   };
-}
-
-
-export async function GET(req){
+}(req){
   try{
     const {searchParams}=new URL(req.url);
     const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();
