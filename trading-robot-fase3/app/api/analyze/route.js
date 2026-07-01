@@ -142,6 +142,75 @@ async function fetchYahooRows(symbol, interval = '1d', range = '6mo') {
 
   const res = await fetch(url, {
     cache: 'no-store',
+    headers: { 'User-Agent': 'Mozilla/5.0' }
+  });
+
+  const data = await res.json();
+  const result = data?.chart?.result?.[0];
+
+  if (!result) throw new Error("Yahoo Finance no devolvió datos para " + symbol);
+
+  const meta = result.meta || {};
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0];
+
+  if (!quote || !timestamps.length) {
+    throw new Error("Datos incompletos de Yahoo Finance para " + symbol);
+  }
+
+  const rows = timestamps.map((t, i) => ({
+    time: new Date(t * 1000).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false
+    }),
+    open: quote.open[i],
+    high: quote.high[i],
+    low: quote.low[i],
+    close: quote.close[i],
+    volume: quote.volume[i] || 0
+  }))
+  .filter(x =>
+    x.open != null &&
+    x.high != null &&
+    x.low != null &&
+    x.close != null
+  );
+
+  const lastRow = rows[rows.length - 1];
+
+  const livePrice =
+    meta.postMarketPrice ??
+    meta.preMarketPrice ??
+    meta.regularMarketPrice ??
+    lastRow.close;
+
+  const liveTime =
+    meta.postMarketTime ??
+    meta.preMarketTime ??
+    meta.regularMarketTime ??
+    null;
+
+  if (lastRow && livePrice) {
+    lastRow.close = livePrice;
+    lastRow.high = Math.max(lastRow.high, livePrice);
+    lastRow.low = Math.min(lastRow.low, livePrice);
+    lastRow.livePrice = livePrice;
+    lastRow.marketState = meta.marketState || 'UNKNOWN';
+
+    if (liveTime) {
+      lastRow.time = new Date(liveTime * 1000).toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false
+      });
+    }
+  }
+
+  return rows;
+}
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`;
+
+  const res = await fetch(url, {
+    cache: 'no-store',
     headers: {
       'User-Agent': 'Mozilla/5.0'
     }
