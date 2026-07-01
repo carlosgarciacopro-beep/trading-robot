@@ -137,36 +137,51 @@ function analyzeRows(symbol, rows, mode='swing'){
   };
 }
 
-async function fetchRowsByFunction(symbol,key,functionName,interval=''){
-  const intervalParam = interval ? `&interval=${interval}` : '';
-  const url=`https://www.alphavantage.co/query?function=${functionName}&symbol=${symbol}${intervalParam}&outputsize=compact&apikey=${key}`;
+async function fetchYahooRows(symbol, interval = '1d', range = '6mo') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`;
 
-  const res=await fetch(url,{cache:'no-store'});
-  const data=await res.json();
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      'User-Agent': 'Mozilla/5.0'
+    }
+  });
 
-  if(data.Note || data.Information) throw new Error(data.Note || data.Information);
-  if(data["Error Message"]) throw new Error(data["Error Message"]);
+  const data = await res.json();
 
-  const raw =
-    data[`Time Series (${interval})`] ||
-    data["Time Series (Daily)"];
+  const result = data?.chart?.result?.[0];
+  if (!result) throw new Error("Yahoo Finance no devolvió datos para " + symbol);
 
-  if(!raw) throw new Error("Alpha Vantage no devolvió datos para "+symbol);
+  const timestamps = result.timestamp || [];
+  const quote = result.indicators?.quote?.[0];
 
-  return Object.entries(raw).reverse().map(([time,v])=>({
-    time,
-    open:+v["1. open"],
-    high:+v["2. high"],
-    low:+v["3. low"],
-    close:+v["4. close"],
-    volume:+v["5. volume"]
-  }));
+  if (!quote || !timestamps.length) {
+    throw new Error("Datos incompletos de Yahoo Finance para " + symbol);
+  }
+
+  return timestamps.map((t, i) => ({
+    time: new Date(t * 1000).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false
+    }),
+    open: quote.open[i],
+    high: quote.high[i],
+    low: quote.low[i],
+    close: quote.close[i],
+    volume: quote.volume[i] || 0
+  }))
+  .filter(x =>
+    x.open != null &&
+    x.high != null &&
+    x.low != null &&
+    x.close != null
+  );
 }
 
-async function fetchRows(symbol,key,mode='swing'){
-  const daily = await fetchRowsByFunction(symbol,key,'TIME_SERIES_DAILY');
+async function fetchRows(symbol, key = null, mode = 'swing') {
+  const daily = await fetchYahooRows(symbol, '1d', '6mo');
 
-  if(mode !== 'intraday'){
+  if (mode !== 'intraday') {
     return {
       main: daily,
       daily,
@@ -176,9 +191,9 @@ async function fetchRows(symbol,key,mode='swing'){
     };
   }
 
-  const m5 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','5min');
-  const m15 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','15min');
-  const h1 = await fetchRowsByFunction(symbol,key,'TIME_SERIES_INTRADAY','60min');
+  const m5 = await fetchYahooRows(symbol, '5m', '5d');
+  const m15 = await fetchYahooRows(symbol, '15m', '10d');
+  const h1 = await fetchYahooRows(symbol, '60m', '1mo');
 
   return {
     main: m5,
@@ -196,10 +211,7 @@ export async function GET(req){
     const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();
     const mode=(searchParams.get('mode')||'swing').toLowerCase();
 
-    const key=process.env.ALPHA_VANTAGE_API_KEY || process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;
-    if(!key)return Response.json({error:'Falta ALPHA_VANTAGE_API_KEY'},{status:500});
-
-    const data=await fetchRows(symbol,key,mode);
+   const data = await fetchRows(symbol, null, mode);
 
 const analysis=analyzeRows(symbol,data.main,mode);
 
