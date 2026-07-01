@@ -1,3 +1,4 @@
+import { getYahooRows } from "../../../lib/yahoo";
 function ema(a,p){const k=2/(p+1),out=[];let prev=a[0];for(let i=0;i<a.length;i++){prev=i===0?a[i]:a[i]*k+prev*(1-k);out.push(prev)}return out}
 
 function rsi(c,p=14){let out=Array(c.length).fill(null);for(let i=p;i<c.length;i++){let g=0,l=0;for(let j=i-p+1;j<=i;j++){let d=c[j]-c[j-1];if(d>=0)g+=d;else l-=d}let rs=l===0?100:g/l;out[i]=100-(100/(1+rs))}return out}
