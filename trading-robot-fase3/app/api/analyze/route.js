@@ -233,7 +233,9 @@ async function fetchRows(symbol, _key = null, mode = 'swing') {
     m15,
     m5
   };
-}(req){
+}
+
+export async function GET(req){
   try{
     const {searchParams}=new URL(req.url);
     const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();
