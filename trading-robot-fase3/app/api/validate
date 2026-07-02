@@ -249,16 +249,7 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    const key =
-      process.env.ALPHA_VANTAGE_API_KEY ||
-      process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY;
-
-    if (!key) {
-      return Response.json(
-        { error: 'Falta ALPHA_VANTAGE_API_KEY' },
-        { status: 500 }
-      );
-    }
+    
 
     const signals = Array.isArray(body.signals)
       ? body.signals
@@ -290,7 +281,7 @@ export async function POST(req) {
         continue;
       }
 
-      const rows = await fetchRows(symbol, key, 'intraday');
+      const rows = await fetchRows(symbol, 'intraday');
       const validated = validateSignal(signal, rows);
 
       results.push(validated);
