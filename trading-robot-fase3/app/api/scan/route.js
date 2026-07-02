@@ -12,17 +12,12 @@ export async function GET(req) {
       .filter(Boolean)
       .slice(0, 5);
 
-    const key = process.env.ALPHA_VANTAGE_API_KEY;
-
-    if (!key) {
-      return Response.json({ error: 'Falta ALPHA_VANTAGE_API_KEY' }, { status: 500 });
-    }
-
+   
     const results = [];
 
     for (const sym of list) {
       try {
-        const data = await fetchRows(sym, key, 'swing');
+        const data = await fetchRows(sym, 'swing');
 const rows = data.main;
 
 if (!rows || rows.length < 20) {
