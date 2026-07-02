@@ -55,12 +55,7 @@ function getDirectionalMove(side, entryPrice, currentPrice) {
 function validateSignal(signal, rows) {
   let side = signal.side;
 
-  const score = Number(signal.score ?? signal.realScore ?? 0);
-
-  if (!side || side === 'NEUTRAL') {
-    if (score >= 2) side = 'CALL';
-    else if (score <= -2) side = 'PUT';
-  }
+  
 
   const score = Number(signal.score ?? signal.realScore ?? 0);
 
