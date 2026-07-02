@@ -53,6 +53,7 @@ function getDirectionalMove(side, entryPrice, currentPrice) {
 }
 
 function validateSignal(signal, rows) {
+  rows = Array.isArray(rows) ? rows : [];
   let side = signal.side;
 
   
