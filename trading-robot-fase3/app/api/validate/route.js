@@ -68,7 +68,11 @@ function validateSignal(signal, rows) {
   const symbol = signal.symbol;
   const mode = signal.mode || 'swing';
 
-  const signalDate = signal.time || signal.date || signal.createdAt || null;
+  const signalDate =
+  signal.createdAt ||
+  signal.time ||
+  signal.date ||
+  null;
 
   const normalizedSignal = { ...signal, side };
 
@@ -122,10 +126,15 @@ const target = getTarget(normalizedSignal);
     };
   }
 
-  const afterRows = rows.filter((r) => {
-    if (!signalDate) return true;
-    return new Date(r.time) >= new Date(signalDate);
-  });
+  const signalMoment = signalDate ? new Date(signalDate).getTime() : null;
+
+const afterRows = rows.filter((r) => {
+  if (!signalMoment) return true;
+
+  const rowMoment = new Date(r.time).getTime();
+
+  return rowMoment >= signalMoment;
+});
 
   for (const row of afterRows) {
     if (side === 'CALL') {
