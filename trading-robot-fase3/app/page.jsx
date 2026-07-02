@@ -9,7 +9,7 @@ export default function Page(){
  const [mode,setMode]=useState('swing');
  const [loading,setLoading]=useState(false);
  const [progress,setProgress]=useState(0);
-const [loadingStep,setLoadingStep]=useState("");
+ const [loadingStep,setLoadingStep]=useState("");
  const [analysis,setAnalysis]=useState(null);
  const [scan,setScan]=useState(null);
  const [history,setHistory]=useState([]);
@@ -26,7 +26,6 @@ const [loadingStep,setLoadingStep]=useState("");
  useEffect(()=>{
   const saved=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
   setHistory(saved);
-  validateHistory(saved);
  },[]);
 
  useEffect(()=>bottom.current?.scrollIntoView({behavior:'smooth'}),[analysis,scan,loading]);
@@ -66,6 +65,12 @@ const [loadingStep,setLoadingStep]=useState("");
   return 'NEUTRAL';
  }
 
+ function getSideFromScore(score){
+  if(score>=2)return 'CALL';
+  if(score<=-2)return 'PUT';
+  return 'NEUTRAL';
+ }
+
  function confidence(a){
   if(!a)return 50;
   return Math.min(100, Math.max(45, a.confidence || (50 + Math.abs(a.score||0)*10)));
@@ -75,27 +80,11 @@ const [loadingStep,setLoadingStep]=useState("");
   if (!currentHistory || currentHistory.length === 0) return;
 
   try{
-    const r = await fetch('/api/validate',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ signals: currentHistory })
-    });
-
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error);
-
-    const validated = d.results || currentHistory;
-
-    localStorage.setItem('nexoraHistory', JSON.stringify(validated));
-    setHistory(validated);
-
-    return validated;
-  }catch(e){
-    console.log('Error validando historial:', e.message);
-    alert('Error validando historial: ' + e.message);
-    return currentHistory;
-  }
-}
+   const r=await fetch('/api/validate',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ signals: currentHistory })
+   });
 
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
@@ -107,6 +96,7 @@ const [loadingStep,setLoadingStep]=useState("");
    return validated;
   }catch(e){
    console.log('Error validando historial:',e.message);
+   alert('Error validando historial: '+e.message);
    return currentHistory;
   }
  }
@@ -114,12 +104,11 @@ const [loadingStep,setLoadingStep]=useState("");
  async function analyze(sym){
   sym=(sym||ticker).trim().toUpperCase();
   if(!sym||loading)return;
+
   setLoading(true);
-
-setProgress(10);
-setLoadingStep("Conectando Alpha Vantage...");
-
-setScan(null);
+  setProgress(10);
+  setLoadingStep("Conectando Yahoo Finance...");
+  setScan(null);
 
   try{
    const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
@@ -130,34 +119,44 @@ setScan(null);
 
    const savedHistory=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-   const isCall=d.analysis.side==='CALL';
-   const isPut=d.analysis.side==='PUT';
+   const score=Number(d.analysis.score || 0);
+   const side=getSideFromScore(score);
+   const isCall=side==='CALL';
+   const isPut=side==='PUT';
 
    const newSignal={
     date:new Date().toLocaleString(),
+    createdAt:new Date().toISOString(),
     symbol:d.analysis.symbol,
-    side:d.analysis.side,
+    side,
     mode:d.analysis.mode || mode,
     price:d.analysis.close,
+    close:d.analysis.close,
+    currentPrice:d.analysis.close,
     entry:isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
+    entryPrice:isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
     stop:isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
     target1:d.analysis.levels?.target1,
+    target:d.analysis.levels?.target1,
     target2:d.analysis.levels?.target2,
     probability:d.analysis.probability,
     score:d.analysis.score,
-    status:'PENDIENTE'
+    status:'PENDIENTE',
+    validationStatus:'PENDIENTE',
+    result:'⏳ PENDIENTE'
    };
 
    const updatedHistory=[newSignal,...savedHistory].slice(0,100);
 
    localStorage.setItem('nexoraHistory',JSON.stringify(updatedHistory));
    setHistory(updatedHistory);
-   validateHistory(updatedHistory);
 
   }catch(e){
    alert('Error: '+e.message)
   }finally{
-   setLoading(false)
+   setLoading(false);
+   setProgress(0);
+   setLoadingStep("");
   }
  }
 
@@ -173,17 +172,15 @@ setScan(null);
   }catch(e){
    alert('Error: '+e.message)
   }finally{
+   setProgress(100);
+   setLoadingStep("Análisis completado");
 
-  setProgress(100);
-  setLoadingStep("Análisis completado");
-
-  setTimeout(()=>{
+   setTimeout(()=>{
     setLoading(false);
     setProgress(0);
     setLoadingStep("");
-  },800);
-
-}
+   },800);
+  }
  }
 
  const best = analysis || scan?.best;
@@ -284,35 +281,32 @@ setScan(null);
          display:'grid',placeItems:'center',fontSize:28,fontWeight:900,margin:'8px auto'
         }}>{confidence(best)}%</div>
 
-       <div style={{textAlign:'center',marginTop:10}}>
-  <div style={{color:'#22c55e',fontWeight:900,fontSize:18}}>
-    Probabilidad Bajista: {best?.probability || 0}%
-  </div>
+        <div style={{textAlign:'center',marginTop:10}}>
+         <div style={{color:'#22c55e',fontWeight:900,fontSize:18}}>
+          Probabilidad Bajista: {best?.probability || 0}%
+         </div>
 
-  <div style={{color:'#94a3b8',fontWeight:700,fontSize:15,marginTop:4}}>
-    Probabilidad Alcista: {100 - (best?.probability || 0)}%
-  </div>
-</div>
-        <div
-  style={{
-    width:'100%',
-    maxWidth:220,
-    height:14,
-    background:'#1e293b',
-    borderRadius:999,
-    margin:'12px auto'
-  }}
->
-  <div
-    style={{
-      width:`${best?.probability || 0}%`,
-      height:'100%',
-      background:'#ef4444',
-      borderRadius:999,
-      transition:'all .4s'
-    }}
-  />
-</div>
+         <div style={{color:'#94a3b8',fontWeight:700,fontSize:15,marginTop:4}}>
+          Probabilidad Alcista: {100 - (best?.probability || 0)}%
+         </div>
+        </div>
+
+        <div style={{
+         width:'100%',
+         maxWidth:220,
+         height:14,
+         background:'#1e293b',
+         borderRadius:999,
+         margin:'12px auto'
+        }}>
+         <div style={{
+          width:`${best?.probability || 0}%`,
+          height:'100%',
+          background:'#ef4444',
+          borderRadius:999,
+          transition:'all .4s'
+         }}/>
+        </div>
        </div>
 
        <div style={{
@@ -337,7 +331,19 @@ Consenso: 75%`}
       <Card>
        <h3>Analizar ticker</h3>
        <div style={{display:'flex',gap:10}}>
-        <input value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase().replace(/\s/g,''))} placeholder='Ej: NVDA, TSLA, SPY...' style={inp}/>
+        <input
+         value={ticker}
+         onChange={(e)=>setTicker(e.target.value.toUpperCase())}
+         onKeyDown={(e)=>{
+          if(e.key === 'Enter') analyze(ticker);
+         }}
+         autoComplete="off"
+         autoCorrect="off"
+         autoCapitalize="characters"
+         spellCheck={false}
+         placeholder="Ej: NVDA, TSLA, SPY..."
+         style={inp}
+        />
         <button onClick={()=>analyze(ticker)} style={btn}>ANALIZAR</button>
        </div>
       </Card>
@@ -350,46 +356,19 @@ Consenso: 75%`}
      </div>
 
      {loading && (
-
-<Card>
-
-<h3>🤖 IA Nexora</h3>
-
-<div style={{
-fontSize:18,
-fontWeight:800,
-color:"#38ef7d",
-marginBottom:10
-}}>
-Analizando mercado...
-</div>
-
-<div style={{
-height:16,
-background:"#23314a",
-borderRadius:10,
-overflow:"hidden"
-}}>
-
-<div style={{
-width:"100%",
-height:"100%",
-background:"linear-gradient(90deg,#38ef7d,#00c853)",
-animation:"pulse 1s infinite"
-}}/>
-
-</div>
-
-<p style={{
-marginTop:10,
-color:"#94a3b8"
-}}>
-Calculando EMA • RSI • MACD • Volumen • Tendencia
-</p>
-
-</Card>
-
-)}
+      <Card>
+       <h3>🤖 IA Nexora</h3>
+       <div style={{fontSize:18,fontWeight:800,color:"#38ef7d",marginBottom:10}}>
+        Analizando mercado...
+       </div>
+       <div style={{height:16,background:"#23314a",borderRadius:10,overflow:"hidden"}}>
+        <div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,#38ef7d,#00c853)",animation:"pulse 1s infinite"}}/>
+       </div>
+       <p style={{marginTop:10,color:"#94a3b8"}}>
+        Calculando EMA • RSI • MACD • Volumen • Tendencia
+       </p>
+      </Card>
+     )}
 
      {scan && <Card>
       <h2>RANKING DE MEJORES SETUPS</h2>
