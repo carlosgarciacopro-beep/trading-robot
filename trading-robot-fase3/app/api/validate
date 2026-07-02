@@ -53,15 +53,32 @@ function getDirectionalMove(side, entryPrice, currentPrice) {
 }
 
 function validateSignal(signal, rows) {
-  const side = signal.side;
+  let side = signal.side;
+
+  const score = Number(signal.score ?? signal.realScore ?? 0);
+
+  if (!side || side === 'NEUTRAL') {
+    if (score >= 2) side = 'CALL';
+    else if (score <= -2) side = 'PUT';
+  }
+
+  const score = Number(signal.score ?? signal.realScore ?? 0);
+
+  if (!side || side === 'NEUTRAL') {
+    if (score >= 2) side = 'CALL';
+    else if (score <= -2) side = 'PUT';
+    else side = 'NEUTRAL';
+  }
   const symbol = signal.symbol;
   const mode = signal.mode || 'swing';
 
   const signalDate = signal.time || signal.date || signal.createdAt || null;
 
-  const entryPrice = getPriceEntry(signal);
-  const stop = getStop(signal);
-  const target = getTarget(signal);
+  const normalizedSignal = { ...signal, side };
+
+const entryPrice = getPriceEntry(normalizedSignal);
+const stop = getStop(normalizedSignal);
+const target = getTarget(normalizedSignal);
 
   const lastRow = rows[rows.length - 1];
   const currentPrice = lastRow?.close || null;
