@@ -71,15 +71,31 @@ const [loadingStep,setLoadingStep]=useState("");
   return Math.min(100, Math.max(45, a.confidence || (50 + Math.abs(a.score||0)*10)));
  }
 
- async function validateHistory(currentHistory){
-  if (!history || history.length === 0) return;
+ async function validateHistory(currentHistory = history){
+  if (!currentHistory || currentHistory.length === 0) return;
 
   try{
-   const r=await fetch('/api/validate',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ signals: history })
-   });
+    const r = await fetch('/api/validate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ signals: currentHistory })
+    });
+
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error);
+
+    const validated = d.results || currentHistory;
+
+    localStorage.setItem('nexoraHistory', JSON.stringify(validated));
+    setHistory(validated);
+
+    return validated;
+  }catch(e){
+    console.log('Error validando historial:', e.message);
+    alert('Error validando historial: ' + e.message);
+    return currentHistory;
+  }
+}
 
    const d=await r.json();
    if(!r.ok)throw new Error(d.error);
