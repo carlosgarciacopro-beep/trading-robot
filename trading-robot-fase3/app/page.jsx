@@ -72,13 +72,13 @@ const [loadingStep,setLoadingStep]=useState("");
  }
 
  async function validateHistory(currentHistory){
-  if(!currentHistory || currentHistory.length===0)return currentHistory;
+  if (!history || history.length === 0) return;
 
   try{
    const r=await fetch('/api/validate',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({signals:currentHistory})
+    body: JSON.stringify({ signals: history })
    });
 
    const d=await r.json();
