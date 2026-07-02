@@ -294,7 +294,8 @@ export async function POST(req) {
         continue;
       }
 
-      const rows = await fetchRows(symbol, 'intraday');
+      const data = await fetchRows(symbol, null, 'intraday');
+const rows = data.main || [];
       const validated = validateSignal(signal, rows);
 
       results.push(validated);
