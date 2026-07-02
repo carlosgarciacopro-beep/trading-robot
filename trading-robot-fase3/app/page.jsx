@@ -185,10 +185,13 @@ export default function Page(){
 
  const best = analysis || scan?.best;
 
- const ganadas=history.filter(h=>h.validationStatus==='GANADA' || h.status==='GANADA').length;
- const perdidas=history.filter(h=>h.validationStatus==='PERDIDA' || h.status==='PERDIDA').length;
- const pendientes=history.filter(h=>h.validationStatus==='PENDIENTE' || h.status==='PENDIENTE').length;
- const efectividad=ganadas+perdidas>0 ? Math.round((ganadas/(ganadas+perdidas))*100) : 0;
+const ganadas=history.filter(h=>h.validationStatus==='GANADA').length;
+const perdidas=history.filter(h=>h.validationStatus==='PERDIDA').length;
+const pendientes=history.filter(h=>h.validationStatus==='PENDIENTE').length;
+const direccion=history.filter(h=>h.validationStatus==='ACERTO_DIRECCION').length;
+
+const efectividad=ganadas+perdidas>0 ? Math.round((ganadas/(ganadas+perdidas))*100) : 0;
+const precision=ganadas+perdidas+direccion>0 ? Math.round(((ganadas+direccion)/(ganadas+perdidas+direccion))*100) : 0;
 
  return <main style={{
   fontFamily:'Inter, system-ui, Arial',
@@ -416,11 +419,13 @@ Consenso: 75%`}
       <Card><h3>Noticias</h3><p>Noticias relevantes próximamente.</p></Card>
       <Card>
        <h3>Stats Robot Nexora ✅</h3>
-       <p>Señales guardadas: {history.length}</p>
-       <p>Ganadas: {ganadas}</p>
-       <p>Perdidas: {perdidas}</p>
-       <p>Pendientes: {pendientes}</p>
-       <p>Efectividad: {efectividad}%</p>
+<p>Señales: {history.length}</p>
+<p>Ganadas: {ganadas}</p>
+<p>Perdidas: {perdidas}</p>
+<p>Pendientes: {pendientes}</p>
+<p>Acertó dirección: {direccion}</p>
+<p>Efectividad: {efectividad}%</p>
+<p>Precisión: {precision}%</p>
        <button onClick={()=>validateHistory(history)} style={{...btn,width:'100%',marginTop:12}}>
         VALIDAR HISTORIAL
        </button>
