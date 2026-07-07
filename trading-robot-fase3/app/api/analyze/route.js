@@ -105,15 +105,15 @@ function analyzeRows(symbol, rows, mode='swing'){
     estado,
     reasons,
     indicators:{
-      rsi:+(rs[i]||0).toFixed(2),
-      ema20:+e20[i].toFixed(2),
-      ema50:+e50[i].toFixed(2),
-      ema200:+e200[i].toFixed(2),
-      macdHist:+m.hist[i].toFixed(4),
-      atr:+(at[i]||0).toFixed(2),
-      volume:lastVol,
-      avgVolume:Math.round(avgVol)
-    },
+  rsi:+(rs[i]||0).toFixed(2),
+  ema20:+(e20[i]||close||0).toFixed(2),
+  ema50:+(e50[i]||close||0).toFixed(2),
+  ema200:+(e200[i]||close||0).toFixed(2),
+  macdHist:+(m.hist[i]||0).toFixed(4),
+  atr:+(at[i]||0).toFixed(2),
+  volume:lastVol || 0,
+  avgVolume:Math.round(avgVol || 0)
+},
     levels:{
       support:+support.toFixed(2),
       resistance:+resistance.toFixed(2),
