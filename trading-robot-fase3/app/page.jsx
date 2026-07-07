@@ -101,65 +101,79 @@ export default function Page(){
   }
  }
 
- async function analyze(sym){
-  sym=(sym||ticker).trim().toUpperCase();
-  if(!sym||loading)return;
+async function analyze(sym){
+ sym=(sym||ticker).trim().toUpperCase();
+ if(!sym||loading)return;
 
-  setLoading(true);
-  setProgress(10);
-  setLoadingStep("Conectando Yahoo Finance...");
-  setScan(null);
+ setLoading(true);
+ setProgress(10);
+ setLoadingStep("Analizando activo...");
+ setScan(null);
 
-  try{
-   const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
-   const d=await r.json();
-if(!r.ok)throw new Error(d.error || 'Error en análisis');
+ try{
+  const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
+  const d=await r.json();
+  if(!r.ok)throw new Error(d.error || 'Error en análisis');
 
-const a = d.analysis || d;
-setAnalysis(a);
+  const a = d.analysis || d;
 
-   const savedHistory=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
+  const safeAnalysis = {
+   ...a,
+   symbol: a.symbol || sym,
+   score: Number(a.score || 0),
+   close: a.close || a.price || 0,
+   probability: Number(a.probability || 0),
+   confidence: Number(a.confidence || 50),
+   reasons: Array.isArray(a.reasons) ? a.reasons : [],
+   levels: a.levels || {},
+   indicators: a.indicators || {},
+   mode: a.mode || mode
+  };
 
-   const score=Number(a.score || 0);
-const side=getSideFromScore(score);
-const isCall=side==='CALL';
-const isPut=side==='PUT';
+  setAnalysis(safeAnalysis);
 
-const newSignal={
- date:new Date().toLocaleString(),
- createdAt:new Date().toISOString(),
- symbol:a.symbol,
- side,
- mode:a.mode || mode,
- price:a.close,
- close:a.close,
- currentPrice:a.close,
- entry:isCall ? a.levels?.entryCall : isPut ? a.levels?.entryPut : null,
- entryPrice:isCall ? a.levels?.entryCall : isPut ? a.levels?.entryPut : null,
- stop:isCall ? a.levels?.stopCall : isPut ? a.levels?.stopPut : null,
- target1:a.levels?.target1,
- target:a.levels?.target1,
- target2:a.levels?.target2,
- probability:a.probability,
- score:a.score,
- status:'PENDIENTE',
- validationStatus:'PENDIENTE',
- result:'⏳ PENDIENTE'
-};
+  const savedHistory=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-   const updatedHistory=[newSignal,...savedHistory].slice(0,100);
+  const score=Number(safeAnalysis.score || 0);
+  const side=getSideFromScore(score);
+  const isCall=side==='CALL';
+  const isPut=side==='PUT';
 
-   localStorage.setItem('nexoraHistory',JSON.stringify(updatedHistory));
-   setHistory(updatedHistory);
+  const newSignal={
+   date:new Date().toLocaleString(),
+   createdAt:new Date().toISOString(),
+   symbol:safeAnalysis.symbol,
+   side,
+   mode:safeAnalysis.mode || mode,
+   price:safeAnalysis.close,
+   close:safeAnalysis.close,
+   currentPrice:safeAnalysis.close,
+   entry:isCall ? safeAnalysis.levels?.entryCall : isPut ? safeAnalysis.levels?.entryPut : null,
+   entryPrice:isCall ? safeAnalysis.levels?.entryCall : isPut ? safeAnalysis.levels?.entryPut : null,
+   stop:isCall ? safeAnalysis.levels?.stopCall : isPut ? safeAnalysis.levels?.stopPut : null,
+   target1:safeAnalysis.levels?.target1,
+   target:safeAnalysis.levels?.target1,
+   target2:safeAnalysis.levels?.target2,
+   probability:safeAnalysis.probability,
+   score:safeAnalysis.score,
+   status:'PENDIENTE',
+   validationStatus:'PENDIENTE',
+   result:'⏳ PENDIENTE'
+  };
 
-  }catch(e){
-   alert('Error: '+e.message)
-  }finally{
-   setLoading(false);
-   setProgress(0);
-   setLoadingStep("");
-  }
+  const updatedHistory=[newSignal,...savedHistory].slice(0,100);
+
+  localStorage.setItem('nexoraHistory',JSON.stringify(updatedHistory));
+  setHistory(updatedHistory);
+
+ }catch(e){
+  alert('Error: '+e.message)
+ }finally{
+  setLoading(false);
+  setProgress(0);
+  setLoadingStep("");
  }
+}
 
  async function scanner(){
   setLoading(true); 
