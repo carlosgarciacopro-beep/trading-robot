@@ -113,38 +113,39 @@ export default function Page(){
   try{
    const r=await fetch('/api/analyze?symbol='+sym+'&mode='+mode);
    const d=await r.json();
-   if(!r.ok)throw new Error(d.error);
+if(!r.ok)throw new Error(d.error || 'Error en análisis');
 
-   setAnalysis(d.analysis);
+const a = d.analysis || d;
+setAnalysis(a);
 
    const savedHistory=JSON.parse(localStorage.getItem('nexoraHistory') || '[]');
 
-   const score=Number(d.analysis.score || 0);
-   const side=getSideFromScore(score);
-   const isCall=side==='CALL';
-   const isPut=side==='PUT';
+   const score=Number(a.score || 0);
+const side=getSideFromScore(score);
+const isCall=side==='CALL';
+const isPut=side==='PUT';
 
-   const newSignal={
-    date:new Date().toLocaleString(),
-    createdAt:new Date().toISOString(),
-    symbol:d.analysis.symbol,
-    side,
-    mode:d.analysis.mode || mode,
-    price:d.analysis.close,
-    close:d.analysis.close,
-    currentPrice:d.analysis.close,
-    entry:isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
-    entryPrice:isCall ? d.analysis.levels?.entryCall : isPut ? d.analysis.levels?.entryPut : null,
-    stop:isCall ? d.analysis.levels?.stopCall : isPut ? d.analysis.levels?.stopPut : null,
-    target1:d.analysis.levels?.target1,
-    target:d.analysis.levels?.target1,
-    target2:d.analysis.levels?.target2,
-    probability:d.analysis.probability,
-    score:d.analysis.score,
-    status:'PENDIENTE',
-    validationStatus:'PENDIENTE',
-    result:'⏳ PENDIENTE'
-   };
+const newSignal={
+ date:new Date().toLocaleString(),
+ createdAt:new Date().toISOString(),
+ symbol:a.symbol,
+ side,
+ mode:a.mode || mode,
+ price:a.close,
+ close:a.close,
+ currentPrice:a.close,
+ entry:isCall ? a.levels?.entryCall : isPut ? a.levels?.entryPut : null,
+ entryPrice:isCall ? a.levels?.entryCall : isPut ? a.levels?.entryPut : null,
+ stop:isCall ? a.levels?.stopCall : isPut ? a.levels?.stopPut : null,
+ target1:a.levels?.target1,
+ target:a.levels?.target1,
+ target2:a.levels?.target2,
+ probability:a.probability,
+ score:a.score,
+ status:'PENDIENTE',
+ validationStatus:'PENDIENTE',
+ result:'⏳ PENDIENTE'
+};
 
    const updatedHistory=[newSignal,...savedHistory].slice(0,100);
 
