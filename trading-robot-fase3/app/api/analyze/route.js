@@ -17,8 +17,32 @@ function getProbability(score, estado, side) {
 }
 
 function getOptionStrike(close, side){
-  if(side === 'CALL') return Math.ceil(close / 5) * 5;
-  if(side === 'PUT') return Math.floor(close / 5) * 5;
+  if(side === 'CALL'){
+  const base = Math.ceil(close / 5) * 5;
+  const strike1 = base > close ? base : base + 5;
+  const strike2 = strike1 + 5;
+
+    return {
+      primary: strike1,
+      secondary: strike2,
+      range: `${strike1} / ${strike2}`,
+      type: 'OTM'
+    };
+  }
+
+  if(side === 'PUT'){
+  const base = Math.floor(close / 5) * 5;
+  const strike1 = base < close ? base : base - 5;
+  const strike2 = strike1 - 5;
+
+    return {
+      primary: strike1,
+      secondary: strike2,
+      range: `${strike1} / ${strike2}`,
+      type: 'OTM'
+    };
+  }
+
   return null;
 }
 
@@ -127,14 +151,44 @@ function analyzeRows(symbol, rows, mode='swing'){
       target2:side==='CALL'?+(targetCall+Math.abs(targetCall-entryCall)).toFixed(2):side==='PUT'?+(targetPut-Math.abs(entryPut-targetPut)).toFixed(2):null,
       riskReward:side==='CALL'?+(Math.abs(targetCall-entryCall)/Math.abs(entryCall-stopCall)).toFixed(2):side==='PUT'?+(Math.abs(entryPut-targetPut)/Math.abs(stopPut-entryPut)).toFixed(2):null
     },
-    optionIdea:{
-      type:side,
-      strike,
-      contract:side==='CALL'?`${strike} CALL`:side==='PUT'?`${strike} PUT`:null,
-      expiration:getExpiration(mode),
-      maxPremiumRisk:'Stop sugerido: -20% a -30% de la prima',
-      avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen o noticia fuerte sin confirmar'
-    }
+   optionIdea:{
+  type:side,
+
+  strike: strike?.primary || null,
+
+  secondaryStrike: strike?.secondary || null,
+
+  strikeRange: strike?.range || null,
+
+  strikeStyle: strike?.type || null,
+
+  contract:
+    side==='CALL'
+      ? `${strike?.primary} CALL`
+      : side==='PUT'
+      ? `${strike?.primary} PUT`
+      : null,
+
+  alternativeContract:
+    side==='CALL'
+      ? `${strike?.secondary} CALL`
+      : side==='PUT'
+      ? `${strike?.secondary} PUT`
+      : null,
+
+  expiration:getExpiration(mode),
+
+  premiumTarget:
+    mode==='swing'
+      ? '$0.80 - $1.50'
+      : 'Depende de 0DTE / 1DTE y volatilidad',
+
+  maxPremiumRisk:'Stop sugerido: -20% a -30% de la prima',
+
+  profitTarget:'Objetivo sugerido: +50% a +80%',
+
+  avoid:'Evitar si spread bid/ask está muy abierto, bajo volumen o noticia fuerte sin confirmar'
+}
   };
 }
 
