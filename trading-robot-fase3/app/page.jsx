@@ -816,17 +816,15 @@ export default function Page() {
                         margin: '14px 0'
                       }}
                     >
-                      {safeNumber(
-                        best.score,
-                        0
-                      ) > 1
-                        ? '🟢 ENTRAR CALL'
-                        : safeNumber(
-                            best.score,
-                            0
-                          ) < -1
-                        ? '🔴 ENTRAR PUT'
-                        : '🟡 ESPERAR'}
+                     {safeNumber(best.score, 0) >= 4
+  ? '🟢 ENTRAR CALL'
+  : safeNumber(best.score, 0) <= -4
+  ? '🔴 ENTRAR PUT'
+  : safeNumber(best.score, 0) >= 2
+  ? '🟡 ESPERAR CONFIRMACIÓN CALL'
+  : safeNumber(best.score, 0) <= -2
+  ? '🟡 ESPERAR CONFIRMACIÓN PUT'
+  : '⚪ NO OPERAR'}
                     </button>
 
                     <p
