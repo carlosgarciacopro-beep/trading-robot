@@ -230,7 +230,7 @@ const precision=ganadas+perdidas+direccion>0 ? Math.round(((ganadas+direccion)/(
     </div>
     <div style={{textAlign:'right',color:'#94a3b8'}}>
      <div style={{color:green,fontWeight:900}}>● EN LÍNEA</div>
-     <div>{currentTime}</div>div>
+     <div>{currentTime}</div>
     </div>
    </header>
 
