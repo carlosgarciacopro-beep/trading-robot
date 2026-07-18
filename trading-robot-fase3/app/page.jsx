@@ -905,6 +905,75 @@ export default function Page() {
                       {best.levels
                         ?.target2 ?? '-'}
                     </p>
+                    {best.optionIdea?.contract && (
+  <div
+    style={{
+      marginTop: 18,
+      padding: 16,
+      border: '1px solid #334155',
+      borderRadius: 14,
+      background: 'rgba(2,6,23,.65)'
+    }}
+  >
+    <h3
+      style={{
+        margin: '0 0 12px',
+        color: '#22c55e'
+      }}
+    >
+      🎯 CONTRATO SUGERIDO POR NEXORA
+    </h3>
+
+    <p>
+      <b>Tipo:</b>{' '}
+      {best.optionIdea?.type || '-'}
+    </p>
+
+    <p>
+      <b>Strike sugerido:</b>{' '}
+      {best.optionIdea?.strike || '-'}
+    </p>
+
+    <p>
+      <b>Contrato:</b>{' '}
+      {best.optionIdea?.contract || '-'}
+    </p>
+
+    <p>
+      <b>Vencimiento sugerido:</b>{' '}
+      {best.optionIdea?.expiration || '-'}
+    </p>
+
+    <p>
+      <b>Modalidad:</b>{' '}
+      {best.mode === 'swing'
+        ? 'Swing · buscar vencimiento de 7 a 14 días'
+        : 'Intradía · 0DTE / 1DTE solo con alta confirmación'}
+    </p>
+
+    <p>
+      <b>Cantidad de contratos:</b>{' '}
+      Por definir según capital y riesgo
+    </p>
+
+    <p style={{color:'#facc15'}}>
+      <b>Gestión de riesgo:</b>{' '}
+      {best.optionIdea?.maxPremiumRisk ||
+        'Stop sugerido -20% a -30% de la prima'}
+    </p>
+
+    <p
+      style={{
+        color: '#94a3b8',
+        fontSize: 13,
+        lineHeight: 1.5
+      }}
+    >
+      ⚠️ {best.optionIdea?.avoid ||
+        'Revisar spread, volumen y open interest antes de comprar.'}
+    </p>
+  </div>
+)}
                   </div>
 
                   <div
