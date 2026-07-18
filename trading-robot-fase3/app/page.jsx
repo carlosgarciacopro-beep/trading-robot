@@ -16,6 +16,10 @@ export default function Page(){
  const bottom=useRef(null);
  const [isMobile,setIsMobile]=useState(false);
  const [currentTime,setCurrentTime]=useState('');
+ const [mounted,setMounted]=useState(false);
+ useEffect(()=>{
+ setMounted(true);
+},[]);
  useEffect(()=>{
   useEffect(()=>{
  const updateTime=()=>setCurrentTime(new Date().toLocaleTimeString());
@@ -215,7 +219,7 @@ const direccion=history.filter(h=>h.validationStatus==='ACERTO_DIRECCION').lengt
 
 const efectividad=ganadas+perdidas>0 ? Math.round((ganadas/(ganadas+perdidas))*100) : 0;
 const precision=ganadas+perdidas+direccion>0 ? Math.round(((ganadas+direccion)/(ganadas+perdidas+direccion))*100) : 0;
-
+if(!mounted) return null;
  return <main style={{
   fontFamily:'Inter, system-ui, Arial',
   background:'radial-gradient(circle at top left,#0f766e 0,#020617 34%,#020617 100%)',
