@@ -19,7 +19,7 @@ export default function Page() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
-
+  const [mobileTab,setMobileTab]=useState('inicio');
   const bottom = useRef(null);
 
   const green = '#22c55e';
@@ -1916,7 +1916,57 @@ export default function Page() {
             </Card>
           </aside>
         </section>
+{isMobile && (
+  <div
+    style={{
+      position: 'fixed',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 999,
+      background: 'rgba(2,6,23,.96)',
+      borderTop: '1px solid #334155',
+      display: 'grid',
+      gridTemplateColumns: 'repeat(5,1fr)',
+      padding: '8px 6px calc(8px + env(safe-area-inset-bottom))',
+      backdropFilter: 'blur(14px)'
+    }}
+  >
+    {[
+      ['inicio','🏠','Inicio'],
+      ['analizar','🔍','Analizar'],
+      ['rendimiento','📊','Rendimiento'],
+      ['inteligencia','🧠','IA'],
+      ['academia','🎓','Academia']
+    ].map(([key,icon,label])=>(
+      <button
+        key={key}
+        onClick={()=>setMobileTab(key)}
+        style={{
+          background: 'transparent',
+          border: 0,
+          color: mobileTab===key ? '#22c55e' : '#94a3b8',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 3,
+          fontSize: 11,
+          fontWeight: 800,
+          cursor: 'pointer',
+          padding: '5px 2px'
+        }}
+      >
+        <span style={{fontSize:21}}>
+          {icon}
+        </span>
 
+        <span>
+          {label}
+        </span>
+      </button>
+    ))}
+  </div>
+)}
         <div ref={bottom} />
 
         <p
@@ -1924,7 +1974,8 @@ export default function Page() {
             textAlign: 'center',
             color: '#64748b',
             fontSize: 12,
-            marginTop: 25
+            marginTop: 25,
+            marginBottom: isMobile ? 90 : 0
           }}
         >
           ⚠️ Solo educativo. No compra ni
