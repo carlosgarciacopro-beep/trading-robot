@@ -253,7 +253,7 @@ const precision=ganadas+perdidas+direccion>0 ? Math.round(((ganadas+direccion)/(
      </Card>
     </aside>
 
-    <main style={{display:'grid',gap:18}}>
+    <div style={{display:'grid',gap:18}}>
      
      <Card>
       <h2 style={{marginTop:0}}>MEJOR SETUP</h2>
@@ -488,7 +488,7 @@ Consenso: 75%`}
       )}
      </Card>
 
-    </main>
+    </div>
 
     <aside style={{display:'grid',gap:14,alignContent:'start'}}>
      <Card>
