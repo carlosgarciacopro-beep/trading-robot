@@ -213,22 +213,30 @@ async function fetchYahooRows(symbol, interval = '1d', range = '6mo') {
 async function fetchRows(symbol, _key = null, mode = 'swing') {
   const daily = await fetchYahooRows(symbol, '1d', '6mo');
 
-  if (mode !== 'intraday') {
-    return {
-      main: daily,
-      daily,
-      h1: null,
-      m15: null,
-      m5: null
-    };
+  let h1 = null;
+  let m15 = null;
+  let m5 = null;
+
+  try {
+    m5 = await fetchYahooRows(symbol, '5m', '5d');
+  } catch (e) {
+    console.log('No se pudo cargar 5M:', e.message);
   }
 
-  const m5 = await fetchYahooRows(symbol, '5m', '5d');
-  const m15 = await fetchYahooRows(symbol, '15m', '10d');
-  const h1 = await fetchYahooRows(symbol, '60m', '1mo');
+  try {
+    m15 = await fetchYahooRows(symbol, '15m', '10d');
+  } catch (e) {
+    console.log('No se pudo cargar 15M:', e.message);
+  }
+
+  try {
+    h1 = await fetchYahooRows(symbol, '60m', '1mo');
+  } catch (e) {
+    console.log('No se pudo cargar 1H:', e.message);
+  }
 
   return {
-    main: m5,
+    main: mode === 'intraday' && m5 ? m5 : daily,
     daily,
     h1,
     m15,
@@ -236,34 +244,95 @@ async function fetchRows(symbol, _key = null, mode = 'swing') {
   };
 }
 
-export async function GET(req){
-  try{
-    const {searchParams}=new URL(req.url);
-    const symbol=(searchParams.get('symbol')||'SPY').toUpperCase();
-    const mode=(searchParams.get('mode')||'swing').toLowerCase();
+function getTimeframeLabel(a) {
+  if (!a) return '⚪ Sin datos';
 
-   const data = await fetchRows(symbol, null, mode);
+  const score = Number(a.score || 0);
 
-const analysis=analyzeRows(symbol,data.main,mode);
+  if (score >= 2) {
+    return `🟢 Alcista (+${score})`;
+  }
 
-if(mode === 'intraday'){
-  analysis.multiTimeframe = {
-    diario: analyzeRows(symbol,data.daily,'swing'),
-    h1: analyzeRows(symbol,data.h1,'intraday'),
-    m15: analyzeRows(symbol,data.m15,'intraday'),
-    m5: analyzeRows(symbol,data.m5,'intraday')
-  };
+  if (score <= -2) {
+    return `🔴 Bajista (${score})`;
+  }
 
-  analysis.priceSource = 'INTRADÍA 5MIN + confirmación 15MIN / 1H / Diario';
+  return `🟡 Neutral (${score})`;
 }
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+
+    const symbol = (
+      searchParams.get('symbol') || 'SPY'
+    ).toUpperCase();
+
+    const mode = (
+      searchParams.get('mode') || 'swing'
+    ).toLowerCase();
+
+    const data = await fetchRows(
+      symbol,
+      null,
+      mode
+    );
+
+    const analysis = analyzeRows(
+      symbol,
+      data.main,
+      mode
+    );
+
+    const dailyAnalysis = data.daily
+      ? analyzeRows(symbol, data.daily, 'swing')
+      : null;
+
+    const h1Analysis = data.h1
+      ? analyzeRows(symbol, data.h1, 'intraday')
+      : null;
+
+    const m15Analysis = data.m15
+      ? analyzeRows(symbol, data.m15, 'intraday')
+      : null;
+
+    const m5Analysis = data.m5
+      ? analyzeRows(symbol, data.m5, 'intraday')
+      : null;
+
+    analysis.multiTimeframe = {
+      daily: getTimeframeLabel(dailyAnalysis),
+      h1: getTimeframeLabel(h1Analysis),
+      m15: getTimeframeLabel(m15Analysis),
+      m5: getTimeframeLabel(m5Analysis)
+    };
+
+    analysis.multiTimeframeRaw = {
+      daily: dailyAnalysis,
+      h1: h1Analysis,
+      m15: m15Analysis,
+      m5: m5Analysis
+    };
+
+    if (mode === 'intraday') {
+      analysis.priceSource =
+        'INTRADÍA 5MIN + confirmación 15MIN / 1H / Diario';
+    } else {
+      analysis.priceSource =
+        'SWING Diario + confirmación 1H / 15MIN / 5MIN';
+    }
 
     return Response.json({
       analysis,
-      disclaimer:'Solo educativo; no es consejo financiero oficial.'
+      disclaimer:
+        'Solo educativo; no es consejo financiero oficial.'
     });
-  }catch(e){
-    return Response.json({error:e.message},{status:400})
+
+  } catch (e) {
+    return Response.json(
+      { error: e.message },
+      { status: 400 }
+    );
   }
 }
-
 export { analyzeRows, fetchRows };
