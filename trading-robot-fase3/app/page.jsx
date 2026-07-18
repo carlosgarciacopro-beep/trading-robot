@@ -15,8 +15,16 @@ export default function Page(){
  const [history,setHistory]=useState([]);
  const bottom=useRef(null);
  const [isMobile,setIsMobile]=useState(false);
-
+ const [currentTime,setCurrentTime]=useState('');
  useEffect(()=>{
+  useEffect(()=>{
+ const updateTime=()=>setCurrentTime(new Date().toLocaleTimeString());
+ updateTime();
+
+ const timer=setInterval(updateTime,1000);
+
+ return()=>clearInterval(timer);
+},[]);
   const check=()=>setIsMobile(window.innerWidth<=768);
   check();
   window.addEventListener('resize',check);
@@ -222,7 +230,7 @@ const precision=ganadas+perdidas+direccion>0 ? Math.round(((ganadas+direccion)/(
     </div>
     <div style={{textAlign:'right',color:'#94a3b8'}}>
      <div style={{color:green,fontWeight:900}}>● EN LÍNEA</div>
-     <div>{new Date().toLocaleTimeString()}</div>
+     <div>{currentTime}</div>div>
     </div>
    </header>
 
