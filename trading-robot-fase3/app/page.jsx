@@ -754,6 +754,7 @@ export default function Page() {
               minWidth: 0
             }}
           >
+            {(!isMobile || mobileTab === 'inicio') && (
             <Card>
               <h2
                 style={{
@@ -1163,7 +1164,7 @@ export default function Page() {
                 </p>
               )}
             </Card>
-
+)}
             <div
               style={{
                 display: 'grid',
