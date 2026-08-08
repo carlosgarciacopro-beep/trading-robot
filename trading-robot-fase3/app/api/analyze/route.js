@@ -1,4 +1,5 @@
 import { runNexoraEngine } from "../../../lib/nexoraEngine.js";
+import { analyzeMarket } from "../../../lib/marketBrain.js";
 
 function ema(values, period) {
   if (!Array.isArray(values) || !values.length) return [];
@@ -568,6 +569,117 @@ export async function fetchRows(symbol, _key = null, mode = "swing") {
   };
 }
 
+function applyMarketContext(analysis, market) {
+  if (!analysis || !market) return analysis;
+
+  const side = analysis.side;
+  const marketTrend = market.marketTrend;
+  const marketRisk = Number(market.risk || 0);
+  const marketConfidence = Number(market.confidence || 0);
+
+  let alignment = 'NEUTRAL';
+  let adjustment = 0;
+  const marketReasons = [];
+
+  if (side === 'CALL') {
+    if (marketTrend === 'BULLISH') {
+      alignment = 'ALIGNED';
+      adjustment += 4;
+      marketReasons.push('El mercado general favorece operaciones alcistas');
+    } else if (marketTrend === 'BEARISH') {
+      alignment = 'CONTRARY';
+      adjustment -= 8;
+      marketReasons.push('El mercado general está en contra de una operación CALL');
+    }
+  }
+
+  if (side === 'PUT') {
+    if (marketTrend === 'BEARISH') {
+      alignment = 'ALIGNED';
+      adjustment += 4;
+      marketReasons.push('El mercado general favorece operaciones bajistas');
+    } else if (marketTrend === 'BULLISH') {
+      alignment = 'CONTRARY';
+      adjustment -= 8;
+      marketReasons.push('El mercado general está en contra de una operación PUT');
+    }
+  }
+
+  if (marketRisk >= 70) {
+    adjustment -= 10;
+    marketReasons.push('El riesgo general del mercado está elevado');
+  } else if (marketRisk <= 35) {
+    adjustment += 2;
+    marketReasons.push('El riesgo general del mercado es contenido');
+  }
+
+  if (market.liquidity === 'LOW') {
+    adjustment -= 4;
+    marketReasons.push('La liquidez general está por debajo de lo deseable');
+  }
+
+  const originalQuality = Number(analysis.qualityScore || 50);
+  const adjustedQuality = clamp(
+    Math.round(originalQuality + adjustment),
+    0,
+    100
+  );
+
+  let marketGate = 'PASS';
+
+  if (
+    side !== 'NEUTRAL' &&
+    (alignment === 'CONTRARY' || marketRisk >= 75)
+  ) {
+    marketGate = 'CAUTION';
+  }
+
+  let isActionable = Boolean(analysis.isActionable);
+
+  // Market Brain funciona como filtro de contexto, no reemplaza la estrategia.
+  // Si el mercado está claramente en contra o el riesgo es extremo,
+  // Nexora exige esperar confirmación adicional.
+  if (isActionable && marketGate === 'CAUTION') {
+    isActionable = false;
+  }
+
+  let estado = analysis.estado;
+
+  if (
+    !isActionable &&
+    analysis.side !== 'NEUTRAL' &&
+    marketGate === 'CAUTION'
+  ) {
+    estado = '🟡 ESPERAR · CONTEXTO DE MERCADO DESFAVORABLE';
+  }
+
+  return {
+    ...analysis,
+    qualityScore: adjustedQuality,
+    confidence: adjustedQuality,
+    isActionable,
+    estado,
+    marketContext: {
+      alignment,
+      gate: marketGate,
+      adjustment,
+      originalQuality,
+      adjustedQuality,
+      trend: marketTrend,
+      confidence: marketConfidence,
+      risk: marketRisk,
+      liquidity: market.liquidity,
+      recommendation: market.recommendation,
+      summary: market.summary,
+      reasons: marketReasons
+    },
+    reasons: [
+      ...(Array.isArray(analysis.reasons) ? analysis.reasons : []),
+      ...marketReasons
+    ]
+  };
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -580,9 +692,14 @@ export async function GET(req) {
       .trim()
       .toLowerCase();
 
-    const data = await fetchRows(symbol, null, mode);
+    const [data, market] = await Promise.all([
+      fetchRows(symbol, null, mode),
+      analyzeMarket()
+    ]);
 
-    const analysis = analyzeRows(symbol, data.main, mode);
+    let analysis = analyzeRows(symbol, data.main, mode);
+
+    analysis = applyMarketContext(analysis, market);
 
     const dailyAnalysis = data.daily
       ? analyzeRows(symbol, data.daily, "swing")
@@ -622,8 +739,11 @@ export async function GET(req) {
         ? "INTRADÍA 5MIN + confirmación 15MIN / 1H / Diario"
         : "SWING Diario + confirmación 1H / 15MIN / 5MIN";
 
+    analysis.marketBrain = market;
+
     return Response.json({
       analysis,
+      market,
       disclaimer: "Solo educativo; no es consejo financiero oficial."
     });
   } catch (e) {
