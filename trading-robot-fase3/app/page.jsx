@@ -77,6 +77,9 @@ function Card({ children, style = {} }) {
         borderRadius: 22,
         padding: 20,
         boxShadow: '0 20px 50px rgba(0,0,0,.35)',
+        minWidth: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
         ...style
       }}
     >
@@ -137,11 +140,12 @@ function AssetLogo({ symbol, size = 42 }) {
 
 function AnimatedStrategyChart({ strategy }) {
   const [step, setStep] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setStep((s) => (s + 1) % 12);
-    }, 650);
+    }, 850);
 
     return () => clearInterval(timer);
   }, []);
@@ -222,6 +226,31 @@ function AnimatedStrategyChart({ strategy }) {
     8;
 
   const selectedVisible = visible.length > selectedIndex;
+
+  const entryLevel =
+    key === 'MRBB' ? 100 :
+    key === 'BREAKOUT' ? 112 :
+    key === 'GAP' ? 124 :
+    116;
+
+  const stopLevel =
+    key === 'MRBB' ? 92 :
+    key === 'BREAKOUT' ? 106 :
+    key === 'GAP' ? 119 :
+    109;
+
+  const targetLevel =
+    key === 'MRBB' ? 114 :
+    key === 'BREAKOUT' ? 126 :
+    key === 'GAP' ? 136 :
+    129;
+
+  const volumes = candles.map((_, i) =>
+    key === 'BREAKOUT' && i >= 8 ? 28 + i * 2 :
+    key === 'GAP' && i >= 7 ? 26 + i * 2 :
+    key === 'MRBB' && i >= 6 ? 22 + i :
+    12 + (i % 4) * 3
+  );
 
   return (
     <div
@@ -334,6 +363,63 @@ function AnimatedStrategyChart({ strategy }) {
           </>
         )}
 
+        {selectedVisible && (
+          <>
+            <line
+              x1={pad}
+              x2={W - 54}
+              y1={scaleY(entryLevel)}
+              y2={scaleY(entryLevel)}
+              stroke="#22c55e"
+              strokeWidth="1.4"
+              strokeDasharray="5 5"
+              opacity=".9"
+            />
+            <line
+              x1={pad}
+              x2={W - 54}
+              y1={scaleY(stopLevel)}
+              y2={scaleY(stopLevel)}
+              stroke="#ef4444"
+              strokeWidth="1.2"
+              strokeDasharray="4 5"
+              opacity=".75"
+            />
+            <line
+              x1={pad}
+              x2={W - 54}
+              y1={scaleY(targetLevel)}
+              y2={scaleY(targetLevel)}
+              stroke="#38bdf8"
+              strokeWidth="1.2"
+              strokeDasharray="4 5"
+              opacity=".75"
+            />
+
+            <text x={W - 49} y={scaleY(entryLevel) + 4} fill="#22c55e" fontSize="10">
+              Entrada
+            </text>
+            <text x={W - 49} y={scaleY(stopLevel) + 4} fill="#ef4444" fontSize="10">
+              Stop
+            </text>
+            <text x={W - 49} y={scaleY(targetLevel) + 4} fill="#38bdf8" fontSize="10">
+              Target
+            </text>
+          </>
+        )}
+
+        {[max - 5, (max + min) / 2, min + 5].map((price, i) => (
+          <text
+            key={`price-${i}`}
+            x={W - 42}
+            y={scaleY(price) + 4}
+            fill="rgba(148,163,184,.75)"
+            fontSize="9"
+          >
+            {price.toFixed(0)}
+          </text>
+        ))}
+
         {visible.map((c, i) => {
           const [open, high, low, close] = c;
           const x = pad + i * (candleW + gap);
@@ -362,6 +448,25 @@ function AnimatedStrategyChart({ strategy }) {
                 opacity=".95"
               />
             </g>
+          );
+        })}
+
+        {visible.map((_, i) => {
+          const x = pad + i * (candleW + gap);
+          const v = volumes[i];
+          const maxV = Math.max(...volumes);
+          const h = 22 * (v / maxV);
+
+          return (
+            <rect
+              key={`vol-${i}`}
+              x={x + 3}
+              y={H - 8 - h}
+              width={candleW - 6}
+              height={h}
+              rx="1"
+              fill="rgba(148,163,184,.28)"
+            />
           );
         })}
 
@@ -415,6 +520,46 @@ function AnimatedStrategyChart({ strategy }) {
             : 'Gap + continuación'}
         </span>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          width: '100%',
+          marginTop: 10,
+          background: '#0f172a',
+          color: '#cbd5e1',
+          border: '1px solid #334155',
+          borderRadius: 10,
+          padding: '9px 10px',
+          cursor: 'pointer',
+          fontWeight: 800
+        }}
+      >
+        {expanded ? 'Ocultar ejemplo completo' : 'Ver ejemplo completo'}
+      </button>
+
+      {expanded && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: 12,
+            borderRadius: 12,
+            background: '#0f172a',
+            color: '#cbd5e1',
+            lineHeight: 1.6,
+            fontSize: 13
+          }}
+        >
+          <div><b>Entrada:</b> línea verde.</div>
+          <div><b>Stop:</b> línea roja.</div>
+          <div><b>Target:</b> línea azul.</div>
+          <div style={{ marginTop: 6, color: '#94a3b8' }}>
+            El ejemplo es educativo y simulado. Sirve para visualizar cómo Nexora
+            reconoce el patrón antes de aplicar la estrategia a datos reales.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -433,6 +578,7 @@ export default function Page() {
   const [history, setHistory] = useState([]);
 
   const [isMobile, setIsMobile] = useState(false);
+  const [isNarrowDesktop, setIsNarrowDesktop] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
   const [mobileTab, setMobileTab] = useState('inicio');
   const [showTechnical, setShowTechnical] = useState(false);
@@ -478,7 +624,9 @@ export default function Page() {
     padding: 14,
     fontSize: 16,
     outline: 'none',
-    boxSizing: 'border-box'
+    boxSizing: 'border-box',
+    minWidth: 0,
+    maxWidth: '100%'
   };
 
   useEffect(() => {
@@ -503,7 +651,11 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth <= 768);
+    const check = () => {
+      setIsMobile(window.innerWidth <= 768);
+      setIsNarrowDesktop(window.innerWidth > 768 && window.innerWidth <= 1180);
+    };
+
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -941,12 +1093,21 @@ export default function Page() {
             display: 'grid',
             gridTemplateColumns: isMobile
               ? '1fr'
-              : '245px minmax(0,1fr) 290px',
+              : isNarrowDesktop
+              ? '205px minmax(0,1fr) 230px'
+              : '235px minmax(0,1fr) 265px',
             gap: 18
           }}
         >
           {!isMobile && (
-            <aside style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
+            <aside
+              style={{
+                display: 'grid',
+                gap: 14,
+                alignContent: 'start',
+                minWidth: 0
+              }}
+            >
               <Card>
                 <h3 style={{ marginTop: 0 }}>Menú Nexora</h3>
                 <p>🏠 Dashboard</p>
@@ -1852,7 +2013,14 @@ export default function Page() {
           </div>
 
           {!isMobile && (
-            <aside style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
+            <aside
+              style={{
+                display: 'grid',
+                gap: 14,
+                alignContent: 'start',
+                minWidth: 0
+              }}
+            >
               <Card>
                 <h3 style={{ marginTop: 0 }}>Estrategias</h3>
 
