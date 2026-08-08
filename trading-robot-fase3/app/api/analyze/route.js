@@ -1,4 +1,4 @@
-import { getYahooRows } from "../../../lib/yahoo";
+import { runNexoraEngine } from "../../../lib/nexoraEngine.js";
 
 function ema(values, period) {
   if (!Array.isArray(values) || !values.length) return [];
@@ -20,12 +20,8 @@ function sma(values, period) {
 
   for (let i = 0; i < values.length; i++) {
     sum += values[i];
-
     if (i >= period) sum -= values[i - period];
-
-    if (i >= period - 1) {
-      out[i] = sum / period;
-    }
+    if (i >= period - 1) out[i] = sum / period;
   }
 
   return out;
@@ -35,11 +31,10 @@ function stdev(values, period, means) {
   const out = Array(values.length).fill(null);
 
   for (let i = period - 1; i < values.length; i++) {
-    const mean = means[i];
     let sumSq = 0;
 
     for (let j = i - period + 1; j <= i; j++) {
-      const diff = values[j] - mean;
+      const diff = values[j] - means[i];
       sumSq += diff * diff;
     }
 
@@ -149,8 +144,50 @@ function round(n, d = 2) {
   return Number(Number(n).toFixed(d));
 }
 
+function candleReversal(rows, i, side) {
+  if (i < 1) return false;
+
+  const cur = rows[i];
+  const prev = rows[i - 1];
+  const body = Math.abs(cur.close - cur.open);
+  const range = Math.max(0.01, cur.high - cur.low);
+  const lowerWick = Math.min(cur.open, cur.close) - cur.low;
+  const upperWick = cur.high - Math.max(cur.open, cur.close);
+
+  if (side === "CALL") {
+    const hammer = lowerWick > body * 1.8 && cur.close >= cur.open;
+    const bullishEngulf =
+      cur.close > cur.open &&
+      prev.close < prev.open &&
+      cur.open <= prev.close &&
+      cur.close >= prev.open;
+
+    return (
+      hammer ||
+      bullishEngulf ||
+      (cur.close > cur.open && lowerWick / range > 0.45)
+    );
+  }
+
+  if (side === "PUT") {
+    const shootingStar = upperWick > body * 1.8 && cur.close <= cur.open;
+    const bearishEngulf =
+      cur.close < cur.open &&
+      prev.close > prev.open &&
+      cur.open >= prev.close &&
+      cur.close <= prev.open;
+
+    return (
+      shootingStar ||
+      bearishEngulf ||
+      (cur.close < cur.open && upperWick / range > 0.45)
+    );
+  }
+
+  return false;
+}
+
 function getOptionStrike(close, side) {
-  // Strikes en pasos de $1 para ETFs/acciones líquidas; frontend puede ajustar después
   if (side === "CALL") {
     const primary = Math.ceil(close) + 3;
     return {
@@ -184,307 +221,17 @@ function getTimeframeLabel(a) {
   if (!a) return "⚪ Sin datos";
 
   if (a.side === "CALL" && a.isActionable) {
-    return `🟢 Alcista · ${a.strategy || "Nexora"} (${a.qualityScore || a.confidence || 0}/100)`;
+    return `🟢 Alcista · ${a.strategy || "Nexora"} (${a.qualityScore || 0}/100)`;
   }
 
   if (a.side === "PUT" && a.isActionable) {
-    return `🔴 Bajista · ${a.strategy || "Nexora"} (${a.qualityScore || a.confidence || 0}/100)`;
+    return `🔴 Bajista · ${a.strategy || "Nexora"} (${a.qualityScore || 0}/100)`;
   }
 
   if (a.side === "CALL") return "🟡 Sesgo alcista · esperar";
   if (a.side === "PUT") return "🟡 Sesgo bajista · esperar";
 
   return "⚪ Neutral";
-}
-
-function candleReversal(rows, i, side) {
-  if (i < 1) return false;
-
-  const cur = rows[i];
-  const prev = rows[i - 1];
-  const body = Math.abs(cur.close - cur.open);
-  const range = Math.max(0.01, cur.high - cur.low);
-  const lowerWick = Math.min(cur.open, cur.close) - cur.low;
-  const upperWick = cur.high - Math.max(cur.open, cur.close);
-
-  if (side === "CALL") {
-    const hammer = lowerWick > body * 1.8 && cur.close >= cur.open;
-    const bullishEngulf =
-      cur.close > cur.open &&
-      prev.close < prev.open &&
-      cur.open <= prev.close &&
-      cur.close >= prev.open;
-
-    return hammer || bullishEngulf || (cur.close > cur.open && lowerWick / range > 0.45);
-  }
-
-  if (side === "PUT") {
-    const shootingStar = upperWick > body * 1.8 && cur.close <= cur.open;
-    const bearishEngulf =
-      cur.close < cur.open &&
-      prev.close > prev.open &&
-      cur.open >= prev.close &&
-      cur.close <= prev.open;
-
-    return shootingStar || bearishEngulf || (cur.close < cur.open && upperWick / range > 0.45);
-  }
-
-  return false;
-}
-
-function buildNCS({
-  close,
-  ema20,
-  ema50,
-  ema200,
-  rsiValue,
-  macdHist,
-  lastVol,
-  avgVol,
-  support,
-  resistance,
-  range
-}) {
-  let score = 0;
-  const reasons = [];
-
-  if (close > ema20 && close > ema50) {
-    score += 2;
-    reasons.push("Precio por encima de sus promedios de corto plazo");
-  }
-
-  if (close < ema20 && close < ema50) {
-    score -= 2;
-    reasons.push("Precio por debajo de sus promedios de corto plazo");
-  }
-
-  if (rsiValue >= 52 && rsiValue <= 68) {
-    score += 1;
-    reasons.push("Impulso alcista saludable");
-  }
-
-  if (rsiValue <= 45) {
-    score -= 1;
-    reasons.push("Impulso bajista");
-  }
-
-  if (macdHist > 0) {
-    score += 1;
-    reasons.push("Momentum mejorando");
-  } else {
-    score -= 1;
-    reasons.push("Momentum debilitándose");
-  }
-
-  if (close > resistance - range * 0.08) {
-    score += 1;
-    reasons.push("Precio cerca de romper resistencia");
-  }
-
-  if (close < support + range * 0.08) {
-    score -= 1;
-    reasons.push("Precio cerca de perder soporte");
-  }
-
-  if (lastVol > avgVol * 1.15) {
-    score += score >= 0 ? 1 : -1;
-    reasons.push("Volumen superior a lo normal");
-  }
-
-  const trendCall =
-    close > ema20 && close > ema50 && macdHist > 0 && rsiValue >= 50;
-
-  const trendPut =
-    close < ema20 && close < ema50 && macdHist < 0 && rsiValue <= 50;
-
-  let side = "NEUTRAL";
-  let status = "⚪ NO OPERAR";
-  let quality = clamp(50 + Math.abs(score) * 8, 45, 92);
-
-  if (score >= 4 && trendCall && lastVol > avgVol) {
-    side = "CALL";
-    status = "🟢 ENTRAR AHORA";
-    quality = clamp(quality + 8, 0, 95);
-  } else if (score <= -4 && trendPut && lastVol > avgVol) {
-    side = "PUT";
-    status = "🟢 ENTRAR AHORA";
-    quality = clamp(quality + 8, 0, 95);
-  } else if (score >= 3 && close > ema20 && rsiValue >= 50) {
-    side = "CALL";
-    status = "🟡 ESPERAR CONFIRMACIÓN";
-  } else if (score <= -3 && close < ema20 && rsiValue <= 50) {
-    side = "PUT";
-    status = "🟡 ESPERAR CONFIRMACIÓN";
-  }
-
-  return {
-    name: "NCS",
-    label: "Tendencia y confluencia",
-    score,
-    side,
-    status,
-    quality,
-    isActionable: status.includes("ENTRAR AHORA"),
-    reasons
-  };
-}
-
-function buildMRBB({
-  rows,
-  i,
-  close,
-  lower,
-  upper,
-  middle,
-  rsiValue,
-  lastVol,
-  avgVol,
-  ema20
-}) {
-  const belowPct =
-    lower && close < lower ? ((lower - close) / lower) * 100 : 0;
-
-  const abovePct =
-    upper && close > upper ? ((close - upper) / upper) * 100 : 0;
-
-  const callCandidate = belowPct > 0 && rsiValue < 35;
-  const putCandidate = abovePct > 0 && rsiValue > 65;
-
-  let side = "NEUTRAL";
-  let extensionPct = 0;
-  let status = "⚪ SIN SOBREEXTENSIÓN";
-  let level = "NORMAL";
-  let quality = 45;
-  let reasons = [];
-  let plainExplanation = "El precio se encuentra dentro de su rango estadístico normal.";
-
-  if (callCandidate) {
-    side = "CALL";
-    extensionPct = belowPct;
-    const confirmed =
-      candleReversal(rows, i, "CALL") ||
-      close > rows[Math.max(0, i - 1)].close;
-
-    if (extensionPct >= 1.5) level = "EXTREMO";
-    else if (extensionPct >= 1) level = "ALTO";
-    else if (extensionPct >= 0.5) level = "MEDIO";
-    else level = "LEVE";
-
-    quality = 55;
-    quality += Math.min(20, extensionPct * 12);
-    if (rsiValue < 30) quality += 10;
-    else if (rsiValue < 35) quality += 6;
-    if (lastVol > avgVol * 1.2) quality += 8;
-    if (confirmed) quality += 10;
-    quality = clamp(Math.round(quality), 0, 95);
-
-    status =
-      confirmed && quality >= 80
-        ? "🟢 MRBB CALL CONFIRMADO"
-        : "🟡 MRBB CALL · ESPERAR CONFIRMACIÓN";
-
-    reasons = [
-      `Precio ${extensionPct.toFixed(2)}% por debajo de su rango normal`,
-      `RSI ${rsiValue.toFixed(1)}: mercado sobrevendido`,
-      lastVol > avgVol * 1.2
-        ? `Volumen ${Math.round((lastVol / avgVol - 1) * 100)}% superior a lo normal`
-        : "Volumen sin confirmación extraordinaria",
-      confirmed
-        ? "Apareció una primera señal de rebote"
-        : "Todavía falta confirmación del rebote"
-    ];
-
-    plainExplanation =
-      "El precio cayó más de lo habitual y está en una zona de sobreventa. Nexora detecta una posible reversión hacia su promedio.";
-  }
-
-  if (putCandidate) {
-    side = "PUT";
-    extensionPct = abovePct;
-    const confirmed =
-      candleReversal(rows, i, "PUT") ||
-      close < rows[Math.max(0, i - 1)].close;
-
-    if (extensionPct >= 1.5) level = "EXTREMO";
-    else if (extensionPct >= 1) level = "ALTO";
-    else if (extensionPct >= 0.5) level = "MEDIO";
-    else level = "LEVE";
-
-    quality = 55;
-    quality += Math.min(20, extensionPct * 12);
-    if (rsiValue > 70) quality += 10;
-    else if (rsiValue > 65) quality += 6;
-    if (lastVol > avgVol * 1.2) quality += 8;
-    if (confirmed) quality += 10;
-    quality = clamp(Math.round(quality), 0, 95);
-
-    status =
-      confirmed && quality >= 80
-        ? "🔴 MRBB PUT CONFIRMADO"
-        : "🟡 MRBB PUT · ESPERAR CONFIRMACIÓN";
-
-    reasons = [
-      `Precio ${extensionPct.toFixed(2)}% por encima de su rango normal`,
-      `RSI ${rsiValue.toFixed(1)}: mercado sobrecomprado`,
-      lastVol > avgVol * 1.2
-        ? `Volumen ${Math.round((lastVol / avgVol - 1) * 100)}% superior a lo normal`
-        : "Volumen sin confirmación extraordinaria",
-      confirmed
-        ? "Apareció una primera señal de corrección"
-        : "Todavía falta confirmación de la corrección"
-    ];
-
-    plainExplanation =
-      "El precio subió más de lo habitual y está en una zona de sobrecompra. Nexora detecta una posible reversión hacia su promedio.";
-  }
-
-  return {
-    name: "MRBB",
-    label: "Reversión a la media",
-    side,
-    status,
-    quality,
-    extensionPct: round(extensionPct, 2),
-    level,
-    isActionable:
-      side !== "NEUTRAL" &&
-      quality >= 80 &&
-      status.includes("CONFIRMADO"),
-    reasons,
-    plainExplanation,
-    technical: {
-      lower: round(lower),
-      middle: round(middle),
-      upper: round(upper),
-      rsi: round(rsiValue),
-      relativeVolume: round(avgVol ? lastVol / avgVol : 0, 2),
-      ema20: round(ema20)
-    }
-  };
-}
-
-function chooseStrategy(ncs, mrbb) {
-  // Una reversión confirmada tiene prioridad cuando el NCS apunta en la dirección opuesta.
-  if (mrbb.isActionable) return mrbb;
-
-  if (ncs.isActionable) return ncs;
-
-  // Candidatos no confirmados: mostrar el de mayor calidad, pero NO guardar como señal.
-  const candidates = [mrbb, ncs].filter((x) => x.side !== "NEUTRAL");
-
-  if (!candidates.length) {
-    return {
-      name: "NONE",
-      label: "Sin estrategia",
-      side: "NEUTRAL",
-      status: "⚪ NO OPERAR",
-      quality: 50,
-      isActionable: false,
-      reasons: ["Ninguna estrategia presenta suficiente ventaja técnica."]
-    };
-  }
-
-  return candidates.sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
 }
 
 export function analyzeRows(symbol, rows, mode = "swing") {
@@ -505,9 +252,10 @@ export function analyzeRows(symbol, rows, mode = "swing") {
 
   const i = rows.length - 1;
   const recent = rows.slice(-20);
-
   const close = closes[i];
+  const previousClose = closes[Math.max(0, i - 1)];
   const lastVol = volumes[i] || 0;
+
   const avgVol =
     volumes.slice(-20).reduce((a, b) => a + b, 0) /
     Math.max(1, Math.min(20, volumes.length));
@@ -516,34 +264,31 @@ export function analyzeRows(symbol, rows, mode = "swing") {
   const resistance = Math.max(...recent.map((x) => Number(x.high)));
   const range = Math.max(0.01, resistance - support);
 
-  const ncs = buildNCS({
+  const engine = runNexoraEngine({
+    symbol,
+    mode,
+    rows,
+    index: i,
     close,
+    previousClose,
     ema20: e20[i],
     ema50: e50[i],
     ema200: e200[i],
-    rsiValue: rs[i] ?? 50,
+    rsi: rs[i] ?? 50,
     macdHist: m.hist[i] ?? 0,
+    atr: at[i] ?? 0,
     lastVol,
     avgVol,
     support,
     resistance,
-    range
+    range,
+    bollingerLower: bb.lower[i],
+    bollingerMiddle: bb.middle[i],
+    bollingerUpper: bb.upper[i],
+    candleReversal
   });
 
-  const mrbb = buildMRBB({
-    rows,
-    i,
-    close,
-    lower: bb.lower[i],
-    upper: bb.upper[i],
-    middle: bb.middle[i],
-    rsiValue: rs[i] ?? 50,
-    lastVol,
-    avgVol,
-    ema20: e20[i]
-  });
-
-  const chosen = chooseStrategy(ncs, mrbb);
+  const chosen = engine.selected;
   const side = chosen.side || "NEUTRAL";
 
   const entryCall = round(resistance + 0.02);
@@ -558,20 +303,24 @@ export function analyzeRows(symbol, rows, mode = "swing") {
   );
 
   const targetCall = round(
-    chosen.name === "MRBB" && bb.middle[i]
+    chosen.id === "MRBB" && bb.middle[i]
       ? bb.middle[i]
       : close + (at[i] || range * 0.5) * 1.5
   );
 
   const targetPut = round(
-    chosen.name === "MRBB" && bb.middle[i]
+    chosen.id === "MRBB" && bb.middle[i]
       ? bb.middle[i]
       : close - (at[i] || range * 0.5) * 1.5
   );
 
   const strike = getOptionStrike(close, side);
 
-  const confidence = clamp(Math.round(chosen.quality || 50), 0, 100);
+  const qualityScore = clamp(
+    Number(chosen.engineQuality ?? chosen.quality ?? 50),
+    0,
+    100
+  );
 
   const signal =
     side === "CALL"
@@ -584,14 +333,9 @@ export function analyzeRows(symbol, rows, mode = "swing") {
         : "VIGILAR PUT"
       : "ESPERAR";
 
-  const plainExplanation =
-    chosen.name === "MRBB"
-      ? chosen.plainExplanation
-      : side === "CALL"
-      ? "La tendencia, el impulso y el volumen favorecen un movimiento alcista, pero Nexora exige suficiente calidad antes de convertirlo en señal."
-      : side === "PUT"
-      ? "La tendencia, el impulso y el volumen favorecen un movimiento bajista, pero Nexora exige suficiente calidad antes de convertirlo en señal."
-      : "Nexora no detecta una ventaja suficientemente clara. La mejor decisión por ahora es esperar.";
+  const strategyMap = Object.fromEntries(
+    engine.strategies.map((s) => [s.id, s])
+  );
 
   return {
     symbol,
@@ -601,38 +345,33 @@ export function analyzeRows(symbol, rows, mode = "swing") {
     currentPrice: round(rows[i].livePrice ?? close),
     marketState: rows[i].marketState || "UNKNOWN",
     lastUpdate: rows[i].time,
-    priceSource:
-      mode === "intraday"
-        ? "INTRADÍA 5MIN"
-        : "CIERRE / VELA DIARIA",
 
-    strategy: chosen.name,
-    strategyLabel: chosen.label,
-    qualityScore: confidence,
+    strategy: chosen.id,
+    strategyLabel: chosen.friendlyName,
+    strategyFullName: chosen.fullName,
+    qualityScore,
+    confidence: qualityScore,
+
     isActionable: Boolean(chosen.isActionable),
+    score: Number(strategyMap.NCS?.score || 0),
 
-    score: ncs.score,
-    confidence,
-
-    // IMPORTANTE: esto NO es probabilidad histórica.
-    // Queda null hasta que Quant Lab tenga backtest válido para esa configuración.
-    probability: null,
-    historicalProbability: null,
+    probability: chosen.historicalProbability ?? null,
+    historicalProbability: chosen.historicalProbability ?? null,
 
     signal,
     side,
     estado: chosen.status || "⚪ NO OPERAR",
-
-    plainExplanation,
+    plainExplanation: chosen.plainExplanation,
     reasons: Array.isArray(chosen.reasons) ? chosen.reasons : [],
 
-    strategies: {
-      ncs,
-      mrbb
-    },
+    metaEngine: engine.meta,
+    strategyRanking: engine.strategies,
+    strategies: strategyMap,
 
-    mrbb,
-    ncs,
+    mrbb: strategyMap.MRBB || null,
+    ncs: strategyMap.NCS || null,
+    bps: strategyMap.BPS || null,
+    ghs: strategyMap.GHS || null,
 
     indicators: {
       rsi: round(rs[i]),
@@ -766,8 +505,6 @@ export async function fetchYahooRows(
         x.close != null
     );
 
-  // NO sobreescribimos el cierre histórico.
-  // El precio en vivo se guarda aparte.
   const lastRow = rows[rows.length - 1];
 
   if (lastRow) {
