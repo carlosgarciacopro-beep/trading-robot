@@ -787,6 +787,22 @@ export default function Page() {
   function operationPlan(best) {
     if (!best) return null;
 
+    if (best.tradePlan && typeof best.tradePlan === 'object') {
+      const tp = best.tradePlan;
+
+      return {
+        ...tp,
+        rr: tp.riskReward1 ?? tp.riskReward ?? null,
+        contract: tp.contracts?.primary || null,
+        alternativeContract: tp.contracts?.alternative || null,
+        expiration: tp.contracts?.expiration || null,
+        premiumTarget: tp.contracts?.premiumTarget || null,
+        maxPremiumRisk: tp.premiumRisk?.stop || null,
+        profitTarget: tp.premiumRisk?.profitTarget || null,
+        avoid: tp.note || null
+      };
+    }
+
     const side = best.side;
     const levels = best.levels || {};
     const optionIdea = best.optionIdea || {};
@@ -838,12 +854,21 @@ export default function Page() {
       premiumTarget: optionIdea.premiumTarget || null,
       maxPremiumRisk: optionIdea.maxPremiumRisk || null,
       profitTarget: optionIdea.profitTarget || null,
-      avoid: optionIdea.avoid || null
+      avoid: optionIdea.avoid || null,
+      checklist: [],
+      invalidationRules: [],
+      statusLabel: null,
+      difficulty: null,
+      entryZone: null
     };
   }
 
   function planRating(plan, best) {
     if (!plan || !best) return 'NO DISPONIBLE';
+
+    if (plan.status === 'LISTO_PARA_ENTRAR') return 'EXCELENTE';
+    if (plan.status === 'ESPERAR_CONFIRMACION') return 'VIGILAR';
+    if (plan.status === 'NO_OPERAR') return 'NO RECOMENDABLE';
 
     const q = safeNumber(best.qualityScore, 0);
     const rr = safeNumber(plan.rr, 0);
@@ -1929,22 +1954,38 @@ export default function Page() {
                             </span>
                           </div>
 
-                          {!best.isActionable && (
-                            <div
-                              style={{
-                                marginTop: 14,
-                                padding: 12,
-                                borderRadius: 12,
-                                background: 'rgba(250,204,21,.08)',
-                                border: '1px solid rgba(250,204,21,.45)',
-                                color: '#facc15',
-                                fontWeight: 800
-                              }}
-                            >
-                              ⚠️ Este plan es informativo. Nexora todavía recomienda
-                              esperar confirmación antes de abrir la operación.
-                            </div>
-                          )}
+                          <div
+                            style={{
+                              marginTop: 14,
+                              padding: 12,
+                              borderRadius: 12,
+                              background:
+                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                  ? 'rgba(34,197,94,.08)'
+                                  : plan?.status === 'NO_OPERAR'
+                                  ? 'rgba(239,68,68,.08)'
+                                  : 'rgba(250,204,21,.08)',
+                              border: `1px solid ${
+                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                  ? 'rgba(34,197,94,.55)'
+                                  : plan?.status === 'NO_OPERAR'
+                                  ? 'rgba(239,68,68,.55)'
+                                  : 'rgba(250,204,21,.45)'
+                              }`,
+                              color:
+                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                  ? '#22c55e'
+                                  : plan?.status === 'NO_OPERAR'
+                                  ? '#ef4444'
+                                  : '#facc15',
+                              fontWeight: 900
+                            }}
+                          >
+                            {plan?.statusLabel ||
+                              (best.isActionable
+                                ? '🟢 LISTO PARA ENTRAR'
+                                : '🟡 ESPERAR CONFIRMACIÓN')}
+                          </div>
 
                           <div
                             style={{
@@ -1958,11 +1999,22 @@ export default function Page() {
                           >
                             {[
                               ['Entrada ideal', plan?.entry ?? '-'],
+                              [
+                                'Zona válida',
+                                plan?.entryZone?.min != null &&
+                                plan?.entryZone?.max != null
+                                  ? `${plan.entryZone.min} - ${plan.entryZone.max}`
+                                  : '-'
+                              ],
                               ['Stop Loss', plan?.stop ?? '-'],
                               ['Target 1', plan?.target1 ?? '-'],
                               ['Target 2', plan?.target2 ?? '-'],
                               ['Riesgo/Beneficio', plan?.rr ? `${plan.rr}:1` : '-'],
-                              ['Tiempo estimado', timeEstimate(best)],
+                              [
+                                'Tiempo estimado',
+                                plan?.timeEstimate || timeEstimate(best)
+                              ],
+                              ['Dificultad', plan?.difficulty || '-'],
                               [
                                 'Prob. histórica',
                                 best.historicalProbability != null
@@ -2100,6 +2152,108 @@ export default function Page() {
 
                           <div
                             style={{
+                              display: 'grid',
+                              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                              gap: 12,
+                              marginTop: 14
+                            }}
+                          >
+                            <div
+                              style={{
+                                background: '#020617',
+                                borderRadius: 14,
+                                border: '1px solid #334155',
+                                padding: 14
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 900,
+                                  color: '#19e6c2',
+                                  marginBottom: 10
+                                }}
+                              >
+                                ✅ Validación antes de entrar
+                              </div>
+
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                {(Array.isArray(plan?.checklist)
+                                  ? plan.checklist
+                                  : []
+                                ).map((item) => (
+                                  <div
+                                    key={item.key}
+                                    style={{
+                                      padding: 10,
+                                      borderRadius: 10,
+                                      background: '#0f172a'
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: 800 }}>
+                                      {item.status === 'PASS'
+                                        ? '✅'
+                                        : item.status === 'FAIL'
+                                        ? '❌'
+                                        : item.status === 'CAUTION'
+                                        ? '⚠️'
+                                        : '⬜'}{' '}
+                                      {item.label}
+                                    </div>
+                                    <div
+                                      style={{
+                                        color: '#94a3b8',
+                                        fontSize: 12,
+                                        marginTop: 3
+                                      }}
+                                    >
+                                      {item.note}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                background: '#020617',
+                                borderRadius: 14,
+                                border: '1px solid #334155',
+                                padding: 14
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 900,
+                                  color: '#ef4444',
+                                  marginBottom: 10
+                                }}
+                              >
+                                ❌ ¿Qué invalida la operación?
+                              </div>
+
+                              <div style={{ display: 'grid', gap: 8 }}>
+                                {(Array.isArray(plan?.invalidationRules)
+                                  ? plan.invalidationRules
+                                  : []
+                                ).map((rule, i) => (
+                                  <div
+                                    key={`${rule}-${i}`}
+                                    style={{
+                                      padding: 10,
+                                      borderRadius: 10,
+                                      background: '#0f172a',
+                                      color: '#cbd5e1'
+                                    }}
+                                  >
+                                    • {rule}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
                               marginTop: 14,
                               padding: 14,
                               borderRadius: 14,
@@ -2115,6 +2269,19 @@ export default function Page() {
                             >
                               ¿Qué significa este plan?
                             </div>
+
+                            {plan?.whyThisPlan && (
+                              <p
+                                style={{
+                                  margin: '0 0 10px',
+                                  color: '#19e6c2',
+                                  lineHeight: 1.7,
+                                  fontWeight: 800
+                                }}
+                              >
+                                {plan.whyThisPlan}
+                              </p>
+                            )}
 
                             <p
                               style={{
