@@ -747,6 +747,43 @@ export default function Page() {
     return 'Alto / esperar';
   }
 
+  function qualityGrade(value) {
+    const q = safeNumber(value, 0);
+    if (q >= 92) return 'A+';
+    if (q >= 86) return 'A';
+    if (q >= 80) return 'B+';
+    if (q >= 72) return 'B';
+    if (q >= 65) return 'C';
+    return 'D';
+  }
+
+  function riskScoreLabel(a) {
+    const q = safeNumber(a?.qualityScore, 50);
+    const rr = safeNumber(a?.levels?.riskReward, 0);
+
+    if (q >= 88 && rr >= 1.8) return 'BAJO';
+    if (q >= 76 && rr >= 1.2) return 'MODERADO';
+    return 'ALTO';
+  }
+
+  function finalActionLabel(a) {
+    if (!a) return 'ESPERAR';
+
+    if (!a.isActionable) return 'ESPERAR CONFIRMACIÓN';
+    if (a.side === 'CALL') return 'CONSIDERAR CALL';
+    if (a.side === 'PUT') return 'CONSIDERAR PUT';
+
+    return 'ESPERAR';
+  }
+
+  function strategyVerdict(s, selectedId) {
+    if (!s) return 'Sin datos';
+    if (s.id === selectedId) return '🏆 Seleccionada';
+    if (s.side === 'NEUTRAL') return 'No aplica';
+    if (s.isActionable) return 'Alternativa válida';
+    return 'Sin confirmación';
+  }
+
   function historyLesson(h) {
     if (!h) return 'Sin explicación disponible.';
     const result = h.validationStatus || h.status;
@@ -1158,7 +1195,7 @@ export default function Page() {
                 >
                   <div>
                     <div style={{ color: '#94a3b8', fontSize: 13 }}>
-                      MEJOR SETUP
+                      🧠 DECISIÓN IA
                     </div>
                     <h2 style={{ margin: '5px 0 0' }}>
                       {best ? humanSignal(best) : 'Sin análisis todavía'}
@@ -1181,255 +1218,578 @@ export default function Page() {
                 </div>
 
                 {best ? (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                      gap: 18,
-                      marginTop: 18
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12
-                        }}
-                      >
-                        <AssetLogo symbol={best.symbol} size={52} />
-
-                        <div>
-                          <div
-                            style={{
-                              fontSize: 38,
-                              fontWeight: 900,
-                              lineHeight: 1
-                            }}
-                          >
-                            {best.symbol}
-                          </div>
-
-                          <div style={{ color: '#94a3b8', marginTop: 5 }}>
-                            Precio: ${best.currentPrice ?? best.close ?? '-'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          marginTop: 18,
-                          padding: 16,
-                          borderRadius: 16,
-                          background: 'rgba(2,6,23,.72)',
-                          border: '1px solid #334155'
-                        }}
-                      >
+                  <>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : '1.1fr .9fr',
+                        gap: 18,
+                        marginTop: 18
+                      }}
+                    >
+                      <div>
                         <div
                           style={{
-                            color: getColorFromSide(best.side),
-                            fontWeight: 900,
-                            fontSize: 18
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12
                           }}
                         >
-                          {strategyName(best)}
-                        </div>
+                          <AssetLogo symbol={best.symbol} size={56} />
 
-                        <p style={{ lineHeight: 1.6, color: '#cbd5e1' }}>
-                          {best.plainExplanation ||
-                            'Nexora está evaluando la situación del mercado.'}
-                        </p>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: 10
-                          }}
-                        >
-                          <div
-                            style={{
-                              background: '#0f172a',
-                              padding: 12,
-                              borderRadius: 12
-                            }}
-                          >
-                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
-                              CONFIANZA TÉCNICA
-                            </div>
-                            <b style={{ fontSize: 22 }}>
-                              {safeNumber(best.confidence, 50)}%
-                            </b>
-                          </div>
-
-                          <div
-                            style={{
-                              background: '#0f172a',
-                              padding: 12,
-                              borderRadius: 12
-                            }}
-                          >
-                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
-                              PROB. HISTÓRICA
-                            </div>
-                            <b style={{ fontSize: 16 }}>
-                              {formatProb(best.historicalProbability)}
-                            </b>
-                          </div>
-
-                          <div
-                            style={{
-                              background: '#0f172a',
-                              padding: 12,
-                              borderRadius: 12
-                            }}
-                          >
-                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
-                              RIESGO
-                            </div>
-                            <b style={{ fontSize: 16 }}>{riskLabel(best)}</b>
-                          </div>
-
-                          <div
-                            style={{
-                              background: '#0f172a',
-                              padding: 12,
-                              borderRadius: 12
-                            }}
-                          >
-                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
-                              ACCIÓN
-                            </div>
-                            <b
+                          <div>
+                            <div
                               style={{
-                                fontSize: 16,
-                                color: best.isActionable ? '#22c55e' : '#facc15'
+                                fontSize: 38,
+                                fontWeight: 900,
+                                lineHeight: 1
+                              }}
+                            >
+                              {best.symbol}
+                            </div>
+
+                            <div style={{ color: '#94a3b8', marginTop: 5 }}>
+                              Precio actual: ${best.currentPrice ?? best.close ?? '-'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 18,
+                            padding: 16,
+                            borderRadius: 16,
+                            background: 'rgba(2,6,23,.72)',
+                            border: '1px solid #334155'
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: getColorFromSide(best.side),
+                              fontWeight: 900,
+                              fontSize: 18
+                            }}
+                          >
+                            🏆 {strategyFullName(best)}
+                          </div>
+
+                          {getStrategyInfo(best.strategy) && (
+                            <div
+                              style={{
+                                color: '#94a3b8',
+                                fontSize: 13,
+                                marginTop: 4
+                              }}
+                            >
+                              {getStrategyInfo(best.strategy).friendlyName}
+                            </div>
+                          )}
+
+                          <p style={{ lineHeight: 1.6, color: '#cbd5e1' }}>
+                            {best.plainExplanation ||
+                              'Nexora está evaluando la situación del mercado.'}
+                          </p>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: isMobile
+                                ? '1fr 1fr'
+                                : 'repeat(4,1fr)',
+                              gap: 10
+                            }}
+                          >
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                padding: 12,
+                                borderRadius: 12
+                              }}
+                            >
+                              <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                                CONFIANZA
+                              </div>
+                              <b style={{ fontSize: 22 }}>
+                                {safeNumber(best.confidence, 50)}%
+                              </b>
+                            </div>
+
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                padding: 12,
+                                borderRadius: 12
+                              }}
+                            >
+                              <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                                CONSENSO IA
+                              </div>
+                              <b style={{ fontSize: 22 }}>
+                                {safeNumber(best.metaEngine?.consensus, 50)}%
+                              </b>
+                            </div>
+
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                padding: 12,
+                                borderRadius: 12
+                              }}
+                            >
+                              <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                                RIESGO
+                              </div>
+                              <b style={{ fontSize: 16 }}>
+                                {riskScoreLabel(best)}
+                              </b>
+                            </div>
+
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                padding: 12,
+                                borderRadius: 12
+                              }}
+                            >
+                              <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                                CALIDAD
+                              </div>
+                              <b style={{ fontSize: 22 }}>
+                                {qualityGrade(best.qualityScore)}
+                              </b>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 14,
+                              padding: 14,
+                              borderRadius: 14,
+                              background: best.isActionable
+                                ? 'rgba(34,197,94,.10)'
+                                : 'rgba(250,204,21,.08)',
+                              border: `1px solid ${
+                                best.isActionable ? '#22c55e' : '#facc15'
+                              }`
+                            }}
+                          >
+                            <div
+                              style={{
+                                color: '#94a3b8',
+                                fontSize: 12,
+                                marginBottom: 4
+                              }}
+                            >
+                              RECOMENDACIÓN NEXORA
+                            </div>
+
+                            <div
+                              style={{
+                                fontWeight: 900,
+                                fontSize: 22,
+                                color: best.isActionable ? green : yellow
+                              }}
+                            >
+                              {finalActionLabel(best)}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 6,
+                                color: '#cbd5e1',
+                                fontSize: 13
                               }}
                             >
                               {best.isActionable
-                                ? best.side === 'CALL'
-                                  ? 'Considerar CALL'
-                                  : 'Considerar PUT'
-                                : 'Esperar confirmación'}
-                            </b>
+                                ? 'La estrategia seleccionada alcanzó el nivel mínimo de calidad del Meta-Motor.'
+                                : 'La mejor estrategia todavía no cumple todos los requisitos para abrir operación.'}
+                            </div>
                           </div>
                         </div>
-
-                        <div
-                          style={{
-                            marginTop: 12,
-                            color: best.isActionable ? green : yellow,
-                            fontWeight: 900
-                          }}
-                        >
-                          {best.estado || '⚪ NO OPERAR'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 style={{ marginTop: 0 }}>¿Por qué lo detectó?</h3>
-
-                      <div style={{ display: 'grid', gap: 10 }}>
-                        {(Array.isArray(best.reasons) ? best.reasons : []).map(
-                          (reason, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                padding: 12,
-                                borderRadius: 12,
-                                background: '#0f172a',
-                                border: '1px solid #1e293b'
-                              }}
-                            >
-                              ✓ {reason}
-                            </div>
-                          )
-                        )}
                       </div>
 
-                      {getStrategyInfo(best.strategy) && (
-                        <>
-                          <button
-                            onClick={() => setShowStrategyHelp((v) => !v)}
-                            style={{ ...secondaryBtn, width: '100%', marginTop: 14 }}
-                          >
-                            {showStrategyHelp
-                              ? 'Ocultar cómo funciona la estrategia'
-                              : `¿Qué significa ${best.strategy}?`}
-                          </button>
+                      <div>
+                        <h3 style={{ marginTop: 0 }}>¿Por qué tomó esta decisión?</h3>
 
-                          {showStrategyHelp && (
-                            <div
-                              style={{
-                                marginTop: 12,
-                                padding: 14,
-                                borderRadius: 14,
-                                background: '#020617',
-                                border: '1px solid #334155'
-                              }}
-                            >
-                              <div style={{ fontWeight: 900, color: '#19e6c2' }}>
-                                {strategyFullName(best)}
+                        <div style={{ display: 'grid', gap: 10 }}>
+                          {(Array.isArray(best.reasons) ? best.reasons : []).map(
+                            (reason, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  padding: 12,
+                                  borderRadius: 12,
+                                  background: '#0f172a',
+                                  border: '1px solid #1e293b'
+                                }}
+                              >
+                                ✓ {reason}
                               </div>
-                              <p style={{ lineHeight: 1.6, color: '#cbd5e1' }}>
-                                {getStrategyInfo(best.strategy).shortDescription}
-                              </p>
-                              <div style={{ display: 'grid', gap: 7 }}>
-                                {getStrategyInfo(best.strategy).details.map((d) => (
-                                  <div key={d}>✓ {d}</div>
-                                ))}
-                              </div>
-                            </div>
+                            )
                           )}
-                        </>
-                      )}
+                        </div>
 
-                      <button
-                        onClick={() => setShowTechnical((v) => !v)}
-                        style={{ ...secondaryBtn, width: '100%', marginTop: 14 }}
-                      >
-                        {showTechnical
-                          ? 'Ocultar detalles técnicos'
-                          : 'Ver detalles técnicos'}
-                      </button>
-
-                      {showTechnical && (
                         <div
                           style={{
-                            marginTop: 12,
+                            marginTop: 14,
                             padding: 14,
                             borderRadius: 14,
                             background: '#020617',
-                            border: '1px solid #334155',
-                            lineHeight: 1.8
+                            border: '1px solid #334155'
                           }}
                         >
-                          <div>RSI: {best.indicators?.rsi ?? '-'}</div>
-                          <div>EMA20: {best.indicators?.ema20 ?? '-'}</div>
-                          <div>EMA50: {best.indicators?.ema50 ?? '-'}</div>
-                          <div>MACD: {best.indicators?.macdHist ?? '-'}</div>
-                          <div>
-                            Volumen relativo: {best.indicators?.relativeVolume ?? '-'}x
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 10,
+                              marginBottom: 8
+                            }}
+                          >
+                            <span style={{ color: '#94a3b8' }}>
+                              Confianza general
+                            </span>
+                            <b>{safeNumber(best.confidence, 50)}%</b>
                           </div>
-                          <div>
-                            Bollinger inferior: {best.indicators?.bollingerLower ?? '-'}
+
+                          <div
+                            style={{
+                              height: 10,
+                              background: '#1e293b',
+                              borderRadius: 999,
+                              overflow: 'hidden'
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${safeNumber(best.confidence, 50)}%`,
+                                height: '100%',
+                                background: '#22c55e'
+                              }}
+                            />
                           </div>
-                          <div>
-                            Bollinger media: {best.indicators?.bollingerMiddle ?? '-'}
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 10,
+                              marginTop: 14,
+                              marginBottom: 8
+                            }}
+                          >
+                            <span style={{ color: '#94a3b8' }}>
+                              Consenso entre estrategias
+                            </span>
+                            <b>{safeNumber(best.metaEngine?.consensus, 50)}%</b>
                           </div>
-                          <div>
-                            Bollinger superior: {best.indicators?.bollingerUpper ?? '-'}
+
+                          <div
+                            style={{
+                              height: 10,
+                              background: '#1e293b',
+                              borderRadius: 999,
+                              overflow: 'hidden'
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${safeNumber(
+                                  best.metaEngine?.consensus,
+                                  50
+                                )}%`,
+                                height: '100%',
+                                background: '#19e6c2'
+                              }}
+                            />
                           </div>
-                          {best.mrbb?.extensionPct > 0 && (
-                            <div>
-                              Distancia fuera de banda: {best.mrbb.extensionPct}%
-                            </div>
-                          )}
                         </div>
-                      )}
+
+                        {getStrategyInfo(best.strategy) && (
+                          <>
+                            <button
+                              onClick={() => setShowStrategyHelp((v) => !v)}
+                              style={{
+                                ...secondaryBtn,
+                                width: '100%',
+                                marginTop: 14
+                              }}
+                            >
+                              {showStrategyHelp
+                                ? 'Ocultar cómo funciona la estrategia'
+                                : `¿Qué significa ${best.strategy}?`}
+                            </button>
+
+                            {showStrategyHelp && (
+                              <div
+                                style={{
+                                  marginTop: 12,
+                                  padding: 14,
+                                  borderRadius: 14,
+                                  background: '#020617',
+                                  border: '1px solid #334155'
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontWeight: 900,
+                                    color: '#19e6c2'
+                                  }}
+                                >
+                                  {strategyFullName(best)}
+                                </div>
+
+                                <p
+                                  style={{
+                                    lineHeight: 1.6,
+                                    color: '#cbd5e1'
+                                  }}
+                                >
+                                  {getStrategyInfo(best.strategy).shortDescription}
+                                </p>
+
+                                <div style={{ display: 'grid', gap: 7 }}>
+                                  {getStrategyInfo(best.strategy).details.map((d) => (
+                                    <div key={d}>✓ {d}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        <button
+                          onClick={() => setShowTechnical((v) => !v)}
+                          style={{
+                            ...secondaryBtn,
+                            width: '100%',
+                            marginTop: 14
+                          }}
+                        >
+                          {showTechnical
+                            ? 'Ocultar detalles técnicos'
+                            : 'Ver detalles técnicos'}
+                        </button>
+
+                        {showTechnical && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              padding: 14,
+                              borderRadius: 14,
+                              background: '#020617',
+                              border: '1px solid #334155',
+                              lineHeight: 1.8
+                            }}
+                          >
+                            <div>RSI: {best.indicators?.rsi ?? '-'}</div>
+                            <div>EMA20: {best.indicators?.ema20 ?? '-'}</div>
+                            <div>EMA50: {best.indicators?.ema50 ?? '-'}</div>
+                            <div>EMA200: {best.indicators?.ema200 ?? '-'}</div>
+                            <div>MACD: {best.indicators?.macdHist ?? '-'}</div>
+                            <div>
+                              Volumen relativo:{' '}
+                              {best.indicators?.relativeVolume ?? '-'}x
+                            </div>
+                            <div>
+                              Bollinger inferior:{' '}
+                              {best.indicators?.bollingerLower ?? '-'}
+                            </div>
+                            <div>
+                              Bollinger media:{' '}
+                              {best.indicators?.bollingerMiddle ?? '-'}
+                            </div>
+                            <div>
+                              Bollinger superior:{' '}
+                              {best.indicators?.bollingerUpper ?? '-'}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+
+                    <div
+                      style={{
+                        marginTop: 18,
+                        paddingTop: 18,
+                        borderTop: '1px solid #334155'
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 10,
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        <div>
+                          <h3 style={{ margin: 0 }}>Estrategias evaluadas</h3>
+                          <p
+                            style={{
+                              color: '#94a3b8',
+                              margin: '5px 0 0',
+                              fontSize: 13
+                            }}
+                          >
+                            Nexora comparó{' '}
+                            {safeNumber(best.metaEngine?.evaluated, 4)} estrategias
+                            y seleccionó automáticamente la de mayor calidad.
+                          </p>
+                        </div>
+
+                        <span
+                          style={{
+                            color: '#19e6c2',
+                            border: '1px solid #19e6c2',
+                            borderRadius: 999,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            fontWeight: 900
+                          }}
+                        >
+                          Consenso {safeNumber(best.metaEngine?.consensus, 50)}%
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile
+                            ? '1fr'
+                            : 'repeat(2, minmax(0,1fr))',
+                          gap: 12,
+                          marginTop: 14
+                        }}
+                      >
+                        {(Array.isArray(best.strategyRanking)
+                          ? best.strategyRanking
+                          : []
+                        ).map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: 14,
+                              borderRadius: 14,
+                              background: '#020617',
+                              border:
+                                s.id === best.strategy
+                                  ? '1px solid #19e6c2'
+                                  : '1px solid #334155'
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                gap: 10,
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 900 }}>
+                                  {s.id} – {s.friendlyName}
+                                </div>
+                                <div
+                                  style={{
+                                    color: '#94a3b8',
+                                    fontSize: 12,
+                                    marginTop: 3
+                                  }}
+                                >
+                                  {s.fullName}
+                                </div>
+                              </div>
+
+                              <b
+                                style={{
+                                  color:
+                                    s.id === best.strategy
+                                      ? '#19e6c2'
+                                      : '#e2e8f0'
+                                }}
+                              >
+                                {safeNumber(
+                                  s.engineQuality ?? s.quality,
+                                  0
+                                )}
+                                /100
+                              </b>
+                            </div>
+
+                            <div
+                              style={{
+                                height: 9,
+                                background: '#1e293b',
+                                borderRadius: 999,
+                                overflow: 'hidden',
+                                marginTop: 10
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${safeNumber(
+                                    s.engineQuality ?? s.quality,
+                                    0
+                                  )}%`,
+                                  height: '100%',
+                                  background:
+                                    s.id === best.strategy
+                                      ? '#19e6c2'
+                                      : '#64748b'
+                                }}
+                              />
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 9,
+                                fontSize: 12,
+                                color:
+                                  s.id === best.strategy
+                                    ? '#22c55e'
+                                    : '#94a3b8'
+                              }}
+                            >
+                              {strategyVerdict(s, best.strategy)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: 18,
+                        padding: 16,
+                        borderRadius: 16,
+                        background: '#020617',
+                        border: '1px solid #334155'
+                      }}
+                    >
+                      <h3 style={{ marginTop: 0 }}>🧠 Decisión de la IA</h3>
+
+                      <p
+                        style={{
+                          lineHeight: 1.7,
+                          color: '#cbd5e1',
+                          marginBottom: 0
+                        }}
+                      >
+                        Nexora evaluó{' '}
+                        <b>{safeNumber(best.metaEngine?.evaluated, 4)}</b>{' '}
+                        estrategias. <b>{best.strategy}</b> obtuvo la mejor
+                        calificación con{' '}
+                        <b>{safeNumber(best.qualityScore, 50)}/100</b>. El consenso
+                        direccional es de{' '}
+                        <b>{safeNumber(best.metaEngine?.consensus, 50)}%</b>.{' '}
+                        {best.isActionable
+                          ? `La configuración alcanzó el umbral mínimo y Nexora considera ${best.side} como la mejor oportunidad actual.`
+                          : 'La estrategia ganadora todavía necesita confirmación, por lo que Nexora recomienda esperar antes de abrir una posición.'}
+                      </p>
+                    </div>
+                  </>
                 ) : (
                   <div
                     style={{
@@ -1443,11 +1803,13 @@ export default function Page() {
                     <h3 style={{ marginTop: 0, color: '#19e6c2' }}>
                       🎯 Bienvenido a Nexora
                     </h3>
+
                     <p style={{ color: '#cbd5e1', lineHeight: 1.7 }}>
                       Escribe un ticker o ejecuta el Scanner IA. Nexora evaluará
                       todas las estrategias activas y seleccionará automáticamente
                       la configuración con mejor calidad.
                     </p>
+
                     <div
                       style={{
                         display: 'grid',
