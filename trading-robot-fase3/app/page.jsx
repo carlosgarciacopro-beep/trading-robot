@@ -784,6 +784,83 @@ export default function Page() {
     return 'Sin confirmación';
   }
 
+  function operationPlan(best) {
+    if (!best) return null;
+
+    const side = best.side;
+    const levels = best.levels || {};
+    const optionIdea = best.optionIdea || {};
+
+    const entry =
+      side === 'CALL'
+        ? levels.entryCall
+        : side === 'PUT'
+        ? levels.entryPut
+        : null;
+
+    const stop =
+      side === 'CALL'
+        ? levels.stopCall
+        : side === 'PUT'
+        ? levels.stopPut
+        : null;
+
+    const target1 = levels.target1 ?? null;
+    const target2 = levels.target2 ?? null;
+
+    const risk =
+      entry != null && stop != null
+        ? Math.abs(Number(entry) - Number(stop))
+        : null;
+
+    const reward1 =
+      entry != null && target1 != null
+        ? Math.abs(Number(target1) - Number(entry))
+        : null;
+
+    const rr =
+      risk && reward1
+        ? Number((reward1 / Math.max(0.01, risk)).toFixed(2))
+        : levels.riskReward ?? null;
+
+    return {
+      side,
+      entry,
+      stop,
+      target1,
+      target2,
+      risk,
+      reward1,
+      rr,
+      contract: optionIdea.contract || null,
+      alternativeContract: optionIdea.alternativeContract || null,
+      expiration: optionIdea.expiration || null,
+      premiumTarget: optionIdea.premiumTarget || null,
+      maxPremiumRisk: optionIdea.maxPremiumRisk || null,
+      profitTarget: optionIdea.profitTarget || null,
+      avoid: optionIdea.avoid || null
+    };
+  }
+
+  function planRating(plan, best) {
+    if (!plan || !best) return 'NO DISPONIBLE';
+
+    const q = safeNumber(best.qualityScore, 0);
+    const rr = safeNumber(plan.rr, 0);
+
+    if (best.isActionable && q >= 88 && rr >= 1.8) return 'EXCELENTE';
+    if (q >= 80 && rr >= 1.3) return 'BUENA';
+    if (q >= 70) return 'VIGILAR';
+    return 'NO RECOMENDABLE';
+  }
+
+  function timeEstimate(best) {
+    if (!best) return '-';
+    return best.mode === 'intraday'
+      ? 'Misma sesión / 1 día'
+      : '2 a 5 días como referencia';
+  }
+
   function historyLesson(h) {
     if (!h) return 'Sin explicación disponible.';
     const result = h.validationStatus || h.status;
@@ -1789,6 +1866,273 @@ export default function Page() {
                           : 'La estrategia ganadora todavía necesita confirmación, por lo que Nexora recomienda esperar antes de abrir una posición.'}
                       </p>
                     </div>
+
+
+                    {(() => {
+                      const plan = operationPlan(best);
+                      const rating = planRating(plan, best);
+
+                      return (
+                        <div
+                          style={{
+                            marginTop: 18,
+                            padding: 18,
+                            borderRadius: 18,
+                            background: 'rgba(2,6,23,.82)',
+                            border: '1px solid #334155'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                              alignItems: 'flex-start',
+                              flexWrap: 'wrap'
+                            }}
+                          >
+                            <div>
+                              <div style={{ color: '#94a3b8', fontSize: 13 }}>
+                                📈 SIMULACIÓN PROFESIONAL
+                              </div>
+                              <h3 style={{ margin: '5px 0 0' }}>
+                                Plan de operación
+                              </h3>
+                            </div>
+
+                            <span
+                              style={{
+                                border: `1px solid ${
+                                  rating === 'EXCELENTE'
+                                    ? '#22c55e'
+                                    : rating === 'BUENA'
+                                    ? '#19e6c2'
+                                    : rating === 'VIGILAR'
+                                    ? '#facc15'
+                                    : '#ef4444'
+                                }`,
+                                color:
+                                  rating === 'EXCELENTE'
+                                    ? '#22c55e'
+                                    : rating === 'BUENA'
+                                    ? '#19e6c2'
+                                    : rating === 'VIGILAR'
+                                    ? '#facc15'
+                                    : '#ef4444',
+                                borderRadius: 999,
+                                padding: '7px 11px',
+                                fontWeight: 900,
+                                fontSize: 12
+                              }}
+                            >
+                              {rating}
+                            </span>
+                          </div>
+
+                          {!best.isActionable && (
+                            <div
+                              style={{
+                                marginTop: 14,
+                                padding: 12,
+                                borderRadius: 12,
+                                background: 'rgba(250,204,21,.08)',
+                                border: '1px solid rgba(250,204,21,.45)',
+                                color: '#facc15',
+                                fontWeight: 800
+                              }}
+                            >
+                              ⚠️ Este plan es informativo. Nexora todavía recomienda
+                              esperar confirmación antes de abrir la operación.
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: isMobile
+                                ? '1fr 1fr'
+                                : 'repeat(4,minmax(0,1fr))',
+                              gap: 10,
+                              marginTop: 14
+                            }}
+                          >
+                            {[
+                              ['Entrada ideal', plan?.entry ?? '-'],
+                              ['Stop Loss', plan?.stop ?? '-'],
+                              ['Target 1', plan?.target1 ?? '-'],
+                              ['Target 2', plan?.target2 ?? '-'],
+                              ['Riesgo/Beneficio', plan?.rr ? `${plan.rr}:1` : '-'],
+                              ['Tiempo estimado', timeEstimate(best)],
+                              [
+                                'Prob. histórica',
+                                best.historicalProbability != null
+                                  ? `${best.historicalProbability}%`
+                                  : 'Pendiente de backtest'
+                              ],
+                              ['Dirección', best.side || 'NEUTRAL']
+                            ].map(([label, value]) => (
+                              <div
+                                key={label}
+                                style={{
+                                  background: '#0f172a',
+                                  border: '1px solid #1e293b',
+                                  borderRadius: 12,
+                                  padding: 12
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    color: '#94a3b8',
+                                    fontSize: 11,
+                                    marginBottom: 5
+                                  }}
+                                >
+                                  {label.toUpperCase()}
+                                </div>
+                                <div style={{ fontWeight: 900 }}>{value}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                              gap: 12,
+                              marginTop: 14
+                            }}
+                          >
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                borderRadius: 14,
+                                border: '1px solid #334155',
+                                padding: 14
+                              }}
+                            >
+                              <div
+                                style={{
+                                  color: '#19e6c2',
+                                  fontWeight: 900,
+                                  marginBottom: 10
+                                }}
+                              >
+                                🎯 Contrato sugerido
+                              </div>
+
+                              <div>
+                                <b>Principal:</b> {plan?.contract || 'Sin contrato todavía'}
+                              </div>
+                              <div style={{ marginTop: 6 }}>
+                                <b>Alternativa:</b>{' '}
+                                {plan?.alternativeContract || 'Sin alternativa'}
+                              </div>
+                              <div style={{ marginTop: 6 }}>
+                                <b>Vencimiento:</b> {plan?.expiration || '-'}
+                              </div>
+                              <div style={{ marginTop: 6 }}>
+                                <b>Prima objetivo:</b> {plan?.premiumTarget || '-'}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  color: '#94a3b8',
+                                  fontSize: 12,
+                                  lineHeight: 1.6
+                                }}
+                              >
+                                El contrato es una referencia técnica. Antes de
+                                comprar, Nexora debe confirmar spread, volumen, open
+                                interest y volatilidad implícita.
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                background: '#0f172a',
+                                borderRadius: 14,
+                                border: '1px solid #334155',
+                                padding: 14
+                              }}
+                            >
+                              <div
+                                style={{
+                                  color: '#19e6c2',
+                                  fontWeight: 900,
+                                  marginBottom: 10
+                                }}
+                              >
+                                ⚖️ Gestión de riesgo
+                              </div>
+
+                              <div>
+                                <b>Stop de la prima:</b>{' '}
+                                {plan?.maxPremiumRisk ||
+                                  'Stop sugerido -20% a -30%'}
+                              </div>
+
+                              <div style={{ marginTop: 6 }}>
+                                <b>Objetivo de ganancia:</b>{' '}
+                                {plan?.profitTarget || '+50% a +80%'}
+                              </div>
+
+                              <div style={{ marginTop: 6 }}>
+                                <b>Filtro:</b>{' '}
+                                {plan?.avoid ||
+                                  'Evitar baja liquidez y spreads muy abiertos'}
+                              </div>
+
+                              <div
+                                style={{
+                                  marginTop: 10,
+                                  color: '#94a3b8',
+                                  fontSize: 12,
+                                  lineHeight: 1.6
+                                }}
+                              >
+                                Nexora separa el stop del activo del stop de la prima:
+                                el precio del subyacente define invalidez técnica y la
+                                prima limita el riesgo monetario.
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 14,
+                              padding: 14,
+                              borderRadius: 14,
+                              background: '#020617',
+                              border: '1px solid #334155'
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 900,
+                                marginBottom: 8
+                              }}
+                            >
+                              ¿Qué significa este plan?
+                            </div>
+
+                            <p
+                              style={{
+                                margin: 0,
+                                color: '#cbd5e1',
+                                lineHeight: 1.7
+                              }}
+                            >
+                              {best.side === 'CALL'
+                                ? `Nexora buscaría una entrada alcista cerca de ${plan?.entry ?? 'la zona indicada'}, invalidaría la idea si el activo cae hacia ${plan?.stop ?? 'el stop'} y tomaría como referencias ${plan?.target1 ?? 'Target 1'} y ${plan?.target2 ?? 'Target 2'}.`
+                                : best.side === 'PUT'
+                                ? `Nexora buscaría una entrada bajista cerca de ${plan?.entry ?? 'la zona indicada'}, invalidaría la idea si el activo sube hacia ${plan?.stop ?? 'el stop'} y tomaría como referencias ${plan?.target1 ?? 'Target 1'} y ${plan?.target2 ?? 'Target 2'}.`
+                                : 'No existe una dirección operable todavía. El plan se activará cuando alguna estrategia supere los filtros del Meta-Motor.'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   <div
