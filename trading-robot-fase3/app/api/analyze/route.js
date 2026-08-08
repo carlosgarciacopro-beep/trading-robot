@@ -1,5 +1,6 @@
 import { runNexoraEngine } from "../../../lib/nexoraEngine.js";
 import { analyzeMarket } from "../../../lib/marketBrain.js";
+import { buildTradePlan } from "../../../lib/tradePlanner.js";
 
 function ema(values, period) {
   if (!Array.isArray(values) || !values.length) return [];
@@ -740,10 +741,12 @@ export async function GET(req) {
         : "SWING Diario + confirmación 1H / 15MIN / 5MIN";
 
     analysis.marketBrain = market;
+    analysis.tradePlan = buildTradePlan(analysis);
 
     return Response.json({
       analysis,
       market,
+      tradePlan: analysis.tradePlan,
       disclaimer: "Solo educativo; no es consejo financiero oficial."
     });
   } catch (e) {
