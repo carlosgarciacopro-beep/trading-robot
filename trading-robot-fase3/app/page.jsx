@@ -19,7 +19,7 @@ const ASSET_DOMAINS = {
   AMD: 'amd.com',
   BAC: 'bankofamerica.com',
   PLTR: 'palantir.com'
-;
+};
 
 const STRATEGY_INFO = {
   NCS: {
@@ -64,7 +64,7 @@ const STRATEGY_INFO = {
       'Analiza gaps de apertura para estimar si tienen mayor probabilidad de continuar o cerrarse.',
     details: ['Tamaño del gap', 'Volumen', 'Tendencia previa', 'Reacción de apertura']
   }
-}
+};
 
 const PANEL = 'rgba(15,23,42,.88)';
 
