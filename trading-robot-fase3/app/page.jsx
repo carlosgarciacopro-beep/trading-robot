@@ -21,6 +21,75 @@ const ASSET_DOMAINS = {
   PLTR: 'palantir.com'
 };
 
+const PANEL = 'rgba(15,23,42,.88)';
+
+function Card({ children, style = {} }) {
+  return (
+    <div
+      style={{
+        background: PANEL,
+        border: '1px solid rgba(148,163,184,.22)',
+        borderRadius: 22,
+        padding: 20,
+        boxShadow: '0 20px 50px rgba(0,0,0,.35)',
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function AssetLogo({ symbol, size = 42 }) {
+  const domain = ASSET_DOMAINS[String(symbol || '').toUpperCase()];
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [symbol, domain]);
+
+  if (!domain || failed) {
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          display: 'grid',
+          placeItems: 'center',
+          background: '#111827',
+          border: '1px solid #334155',
+          fontWeight: 900,
+          fontSize: Math.max(10, size * 0.28),
+          flex: '0 0 auto'
+        }}
+      >
+        {String(symbol || '?').slice(0, 4)}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={`https://logo.clearbit.com/${domain}`}
+      alt={symbol}
+      width={size}
+      height={size}
+      loading="eager"
+      decoding="async"
+      onError={() => setFailed(true)}
+      style={{
+        borderRadius: '50%',
+        objectFit: 'contain',
+        background: '#fff',
+        padding: 3,
+        boxSizing: 'border-box',
+        flex: '0 0 auto'
+      }}
+    />
+  );
+}
+
 export default function Page() {
   const [ticker, setTicker] = useState('');
   const [watch, setWatch] = useState(DEFAULT);
@@ -49,7 +118,6 @@ export default function Page() {
   const red = '#ef4444';
   const yellow = '#facc15';
   const cyan = '#19e6c2';
-  const panel = 'rgba(15,23,42,.88)';
 
   const btn = {
     background: green,
@@ -128,23 +196,6 @@ export default function Page() {
     }
   }, [analysis, scan]);
 
-  function Card({ children, style = {} }) {
-    return (
-      <div
-        style={{
-          background: panel,
-          border: '1px solid rgba(148,163,184,.22)',
-          borderRadius: 22,
-          padding: 20,
-          boxShadow: '0 20px 50px rgba(0,0,0,.35)',
-          ...style
-        }}
-      >
-        {children}
-      </div>
-    );
-  }
-
   function safeNumber(value, fallback = 0) {
     const num = Number(value);
     return Number.isFinite(num) ? num : fallback;
@@ -172,48 +223,6 @@ export default function Page() {
     if (n >= 80) return green;
     if (n >= 65) return yellow;
     return '#94a3b8';
-  }
-
-  function AssetLogo({ symbol, size = 42 }) {
-    const domain = ASSET_DOMAINS[String(symbol || '').toUpperCase()];
-    const [failed, setFailed] = useState(false);
-
-    if (!domain || failed) {
-      return (
-        <div
-          style={{
-            width: size,
-            height: size,
-            borderRadius: '50%',
-            display: 'grid',
-            placeItems: 'center',
-            background: '#111827',
-            border: '1px solid #334155',
-            fontWeight: 900,
-            fontSize: Math.max(10, size * 0.28)
-          }}
-        >
-          {String(symbol || '?').slice(0, 4)}
-        </div>
-      );
-    }
-
-    return (
-      <img
-        src={`https://logo.clearbit.com/${domain}`}
-        alt={symbol}
-        width={size}
-        height={size}
-        onError={() => setFailed(true)}
-        style={{
-          borderRadius: '50%',
-          objectFit: 'contain',
-          background: '#fff',
-          padding: 3,
-          boxSizing: 'border-box'
-        }}
-      />
-    );
   }
 
   function humanSignal(a) {
@@ -848,6 +857,8 @@ export default function Page() {
                       }}
                     >
                       <input
+                        id="nexora-ticker-input"
+                        name="nexora-ticker-input"
                         value={ticker}
                         onChange={(e) => {
                           const clean = e.target.value
@@ -856,9 +867,10 @@ export default function Page() {
                           setTicker(clean);
                         }}
                         onKeyDown={(e) => {
+                          e.stopPropagation();
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            if (!loading) analyze(ticker);
+                            if (!loading) analyze(e.currentTarget.value);
                           }
                         }}
                         autoComplete="off"
