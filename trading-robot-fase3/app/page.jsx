@@ -135,6 +135,290 @@ function AssetLogo({ symbol, size = 42 }) {
   );
 }
 
+function AnimatedStrategyChart({ strategy }) {
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStep((s) => (s + 1) % 12);
+    }, 650);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const datasets = {
+    NCS: [
+      [92, 96, 90, 95], [95, 99, 93, 98], [98, 101, 96, 99],
+      [99, 104, 98, 103], [103, 108, 102, 107], [107, 111, 105, 110],
+      [110, 114, 108, 113], [113, 118, 111, 117], [117, 121, 115, 119],
+      [119, 124, 118, 123], [123, 128, 121, 127], [127, 132, 125, 131]
+    ],
+    MRBB: [
+      [116, 119, 113, 118], [118, 120, 114, 115], [115, 117, 109, 111],
+      [111, 113, 104, 106], [106, 108, 99, 101], [101, 104, 94, 96],
+      [96, 100, 91, 93], [93, 99, 92, 98], [98, 104, 96, 103],
+      [103, 109, 101, 108], [108, 114, 106, 112], [112, 118, 110, 116]
+    ],
+    BREAKOUT: [
+      [100, 104, 98, 102], [102, 106, 100, 104], [104, 107, 101, 103],
+      [103, 107, 101, 106], [106, 108, 103, 105], [105, 108, 102, 107],
+      [107, 109, 104, 106], [106, 110, 105, 109], [109, 116, 108, 115],
+      [115, 122, 113, 120], [120, 126, 118, 124], [124, 130, 122, 128]
+    ],
+    GAP: [
+      [102, 105, 99, 103], [103, 107, 101, 106], [106, 109, 104, 108],
+      [108, 111, 105, 107], [107, 110, 104, 109], [109, 112, 107, 111],
+      [111, 114, 109, 113], [124, 128, 122, 127], [127, 132, 125, 130],
+      [130, 134, 128, 132], [132, 137, 130, 135], [135, 139, 133, 138]
+    ]
+  };
+
+  const key = strategy === 'BPS' ? 'BREAKOUT' : strategy === 'GHS' ? 'GAP' : strategy;
+  const candles = datasets[key] || datasets.NCS;
+  const visible = candles.slice(0, Math.max(2, step + 1));
+  const allValues = candles.flat();
+  const min = Math.min(...allValues) - 4;
+  const max = Math.max(...allValues) + 4;
+  const W = 520;
+  const H = 220;
+  const pad = 24;
+  const chartH = H - pad * 2;
+  const scaleY = (v) => pad + ((max - v) / (max - min)) * chartH;
+  const candleW = 17;
+  const gap = 19;
+
+  const emaFast = candles.map((c, i) => {
+    const start = Math.max(0, i - 2);
+    const arr = candles.slice(start, i + 1).map((x) => x[3]);
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  });
+
+  const emaSlow = candles.map((c, i) => {
+    const start = Math.max(0, i - 4);
+    const arr = candles.slice(start, i + 1).map((x) => x[3]);
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  });
+
+  const mid = candles.map((c, i) => {
+    const start = Math.max(0, i - 4);
+    const arr = candles.slice(start, i + 1).map((x) => x[3]);
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  });
+
+  const upper = mid.map((m) => m + 10);
+  const lower = mid.map((m) => m - 10);
+
+  function pathFrom(values, count = visible.length) {
+    return values
+      .slice(0, count)
+      .map((v, i) => `${i === 0 ? 'M' : 'L'} ${pad + i * (candleW + gap) + candleW / 2} ${scaleY(v)}`)
+      .join(' ');
+  }
+
+  const selectedIndex =
+    key === 'MRBB' ? 7 :
+    key === 'BREAKOUT' ? 8 :
+    key === 'GAP' ? 7 :
+    8;
+
+  const selectedVisible = visible.length > selectedIndex;
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        background: '#020617',
+        border: '1px solid #334155',
+        borderRadius: 16,
+        padding: 10,
+        overflow: 'hidden'
+      }}
+    >
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={`Ejemplo animado de la estrategia ${strategy}`}
+        style={{ width: '100%', height: 'auto', display: 'block' }}
+      >
+        {[0, 1, 2, 3, 4].map((i) => (
+          <line
+            key={`grid-${i}`}
+            x1={pad}
+            x2={W - pad}
+            y1={pad + i * (chartH / 4)}
+            y2={pad + i * (chartH / 4)}
+            stroke="rgba(148,163,184,.14)"
+            strokeWidth="1"
+          />
+        ))}
+
+        {key === 'NCS' && (
+          <>
+            <path
+              d={pathFrom(emaFast)}
+              fill="none"
+              stroke="#22c55e"
+              strokeWidth="2.5"
+              opacity=".95"
+            />
+            <path
+              d={pathFrom(emaSlow)}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="2.2"
+              opacity=".9"
+            />
+          </>
+        )}
+
+        {key === 'MRBB' && (
+          <>
+            <path
+              d={pathFrom(upper)}
+              fill="none"
+              stroke="#22d3ee"
+              strokeWidth="1.8"
+              opacity=".9"
+            />
+            <path
+              d={pathFrom(mid)}
+              fill="none"
+              stroke="#94a3b8"
+              strokeWidth="1.5"
+              opacity=".8"
+            />
+            <path
+              d={pathFrom(lower)}
+              fill="none"
+              stroke="#22d3ee"
+              strokeWidth="1.8"
+              opacity=".9"
+            />
+          </>
+        )}
+
+        {key === 'BREAKOUT' && (
+          <line
+            x1={pad}
+            x2={W - pad}
+            y1={scaleY(111)}
+            y2={scaleY(111)}
+            stroke="#facc15"
+            strokeWidth="2"
+            strokeDasharray="8 6"
+          />
+        )}
+
+        {key === 'GAP' && (
+          <>
+            <line
+              x1={pad + 6 * (candleW + gap)}
+              x2={pad + 7 * (candleW + gap)}
+              y1={scaleY(116)}
+              y2={scaleY(116)}
+              stroke="#facc15"
+              strokeWidth="2"
+              strokeDasharray="6 5"
+            />
+            {selectedVisible && (
+              <text
+                x={pad + 6.4 * (candleW + gap)}
+                y={scaleY(118)}
+                fill="#facc15"
+                fontSize="11"
+                textAnchor="middle"
+              >
+                GAP
+              </text>
+            )}
+          </>
+        )}
+
+        {visible.map((c, i) => {
+          const [open, high, low, close] = c;
+          const x = pad + i * (candleW + gap);
+          const up = close >= open;
+          const top = scaleY(Math.max(open, close));
+          const bottom = scaleY(Math.min(open, close));
+          const bodyH = Math.max(3, bottom - top);
+
+          return (
+            <g key={`candle-${i}`}>
+              <line
+                x1={x + candleW / 2}
+                x2={x + candleW / 2}
+                y1={scaleY(high)}
+                y2={scaleY(low)}
+                stroke={up ? '#22c55e' : '#ef4444'}
+                strokeWidth="2"
+              />
+              <rect
+                x={x}
+                y={top}
+                width={candleW}
+                height={bodyH}
+                rx="2"
+                fill={up ? '#22c55e' : '#ef4444'}
+                opacity=".95"
+              />
+            </g>
+          );
+        })}
+
+        {selectedVisible && (
+          <>
+            <circle
+              cx={pad + selectedIndex * (candleW + gap) + candleW / 2}
+              cy={scaleY(candles[selectedIndex][3])}
+              r="6"
+              fill="#facc15"
+            />
+            <text
+              x={pad + selectedIndex * (candleW + gap) + candleW / 2}
+              y={scaleY(candles[selectedIndex][3]) - 14}
+              fill="#facc15"
+              fontSize="12"
+              textAnchor="middle"
+              fontWeight="700"
+            >
+              {key === 'MRBB'
+                ? 'REBOUNCE'
+                : key === 'BREAKOUT'
+                ? 'BREAKOUT'
+                : key === 'GAP'
+                ? 'GAP'
+                : 'CONFIRMACIÓN'}
+            </text>
+          </>
+        )}
+      </svg>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 8,
+          flexWrap: 'wrap',
+          color: '#94a3b8',
+          fontSize: 12,
+          marginTop: 6
+        }}
+      >
+        <span>Velas educativas animadas</span>
+        <span>
+          {key === 'NCS'
+            ? 'EMA + momentum'
+            : key === 'MRBB'
+            ? 'Bollinger + reversión'
+            : key === 'BREAKOUT'
+            ? 'Resistencia + ruptura'
+            : 'Gap + continuación'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [ticker, setTicker] = useState('');
   const [watch, setWatch] = useState(DEFAULT);
@@ -986,9 +1270,51 @@ export default function Page() {
                     </div>
                   </div>
                 ) : (
-                  <p style={{ color: '#94a3b8' }}>
-                    Analiza un ticker o ejecuta el scanner para comenzar.
-                  </p>
+                  <div
+                    style={{
+                      marginTop: 18,
+                      padding: 18,
+                      borderRadius: 16,
+                      background: '#020617',
+                      border: '1px solid #334155'
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0, color: '#19e6c2' }}>
+                      🎯 Bienvenido a Nexora
+                    </h3>
+                    <p style={{ color: '#cbd5e1', lineHeight: 1.7 }}>
+                      Escribe un ticker o ejecuta el Scanner IA. Nexora evaluará
+                      todas las estrategias activas y seleccionará automáticamente
+                      la configuración con mejor calidad.
+                    </p>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                        gap: 10
+                      }}
+                    >
+                      {[
+                        'Tendencia y medias móviles',
+                        'Momentum y RSI',
+                        'Volumen y liquidez',
+                        'Soportes y resistencias',
+                        'Reversión con Bollinger',
+                        'Confirmación multi-timeframe'
+                      ].map((item) => (
+                        <div
+                          key={item}
+                          style={{
+                            padding: 11,
+                            borderRadius: 12,
+                            background: '#0f172a'
+                          }}
+                        >
+                          ✓ {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </Card>
             )}
@@ -1474,8 +1800,10 @@ export default function Page() {
                 <h2 style={{ marginTop: 0 }}>🎓 Academia Nexora</h2>
                 <p style={{ lineHeight: 1.7 }}>
                   La vista sencilla explica qué está ocurriendo sin exigir que el
-                  usuario conozca RSI, MACD o Bollinger. Los detalles técnicos
-                  quedan disponibles para quien quiera profundizar.
+                  usuario conozca RSI, MACD o Bollinger. Cada estrategia incluye
+                  ahora una mini gráfica animada con velas, similar a la lectura que
+                  verías en una plataforma de trading, para visualizar dónde aparece
+                  la oportunidad.
                 </p>
                 <p>
                   <b>Sobreventa:</b> el precio cayó con mucha fuerza y puede estar
@@ -1515,6 +1843,7 @@ export default function Page() {
                         {info.friendlyName}
                       </div>
                       <p style={{ lineHeight: 1.6 }}>{info.shortDescription}</p>
+                      <AnimatedStrategyChart strategy={key} />
                     </div>
                   ))}
                 </div>
