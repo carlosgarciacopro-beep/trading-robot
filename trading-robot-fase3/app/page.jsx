@@ -19,7 +19,52 @@ const ASSET_DOMAINS = {
   AMD: 'amd.com',
   BAC: 'bankofamerica.com',
   PLTR: 'palantir.com'
-};
+;
+
+const STRATEGY_INFO = {
+  NCS: {
+    fullName: 'Nexora Confluence Strategy',
+    friendlyName: 'Tendencia y Confluencia',
+    shortDescription:
+      'Busca operaciones cuando tendencia, impulso, volumen y niveles técnicos apuntan en la misma dirección.',
+    details: [
+      'Tendencia principal con EMA 20, 50 y 200',
+      'Momentum con MACD',
+      'Fuerza del mercado con RSI',
+      'Volumen relativo',
+      'Soportes y resistencias',
+      'Confirmación multi-timeframe'
+    ]
+  },
+  MRBB: {
+    fullName: 'Mean Reversion Bollinger Bands',
+    friendlyName: 'Reversión a la Media',
+    shortDescription:
+      'Busca activos que se alejaron demasiado de su rango normal y podrían regresar hacia su promedio.',
+    details: [
+      'Bandas de Bollinger 20,2',
+      'RSI para sobreventa o sobrecompra',
+      'Distancia fuera de la banda',
+      'Volumen relativo',
+      'Señal inicial de reversión',
+      'Objetivo hacia la media'
+    ]
+  },
+  BREAKOUT: {
+    fullName: 'Breakout Precision Strategy',
+    friendlyName: 'Rompimiento con Confirmación',
+    shortDescription:
+      'Busca rupturas de soportes o resistencias con fuerza suficiente para reducir falsos rompimientos.',
+    details: ['Soporte/resistencia', 'Volumen', 'Momentum', 'Confirmación']
+  },
+  GAP: {
+    fullName: 'Gap Hunter Strategy',
+    friendlyName: 'Gaps y Continuación',
+    shortDescription:
+      'Analiza gaps de apertura para estimar si tienen mayor probabilidad de continuar o cerrarse.',
+    details: ['Tamaño del gap', 'Volumen', 'Tendencia previa', 'Reacción de apertura']
+  }
+}
 
 const PANEL = 'rgba(15,23,42,.88)';
 
@@ -107,6 +152,7 @@ export default function Page() {
   const [currentTime, setCurrentTime] = useState('');
   const [mobileTab, setMobileTab] = useState('inicio');
   const [showTechnical, setShowTechnical] = useState(false);
+  const [showStrategyHelp, setShowStrategyHelp] = useState(false);
 
   const [quantSymbol, setQuantSymbol] = useState('QQQ');
   const [backtest, setBacktest] = useState(null);
@@ -243,9 +289,45 @@ export default function Page() {
 
   function strategyName(a) {
     if (!a) return 'Sin estrategia';
-    if (a.strategy === 'MRBB') return 'MRBB · Reversión a la media';
-    if (a.strategy === 'NCS') return 'NCS · Tendencia y confluencia';
-    return 'Sin estrategia válida';
+    const info = STRATEGY_INFO[a.strategy];
+    if (!info) return 'Sin estrategia válida';
+    return `${a.strategy} · ${info.friendlyName}`;
+  }
+
+  function strategyFullName(a) {
+    if (!a) return 'Sin estrategia';
+    const info = STRATEGY_INFO[a.strategy];
+    return info ? `${a.strategy} – ${info.fullName}` : 'Sin estrategia válida';
+  }
+
+  function getStrategyInfo(strategy) {
+    return STRATEGY_INFO[strategy] || null;
+  }
+
+  function riskLabel(a) {
+    const q = safeNumber(a?.qualityScore, 50);
+    if (q >= 85) return 'Bajo a moderado';
+    if (q >= 70) return 'Moderado';
+    return 'Alto / esperar';
+  }
+
+  function historyLesson(h) {
+    if (!h) return 'Sin explicación disponible.';
+    const result = h.validationStatus || h.status;
+
+    if (result === 'GANADA') {
+      return `La señal ${h.strategy || ''} alcanzó el objetivo definido. Conviene revisar qué condiciones coincidieron para repetir configuraciones de calidad similar.`;
+    }
+
+    if (result === 'PERDIDA') {
+      return `La señal no alcanzó el objetivo y activó el criterio de pérdida. Conviene revisar si faltó confirmación, volumen o si el mercado cambió de contexto.`;
+    }
+
+    if (result === 'ACERTO_DIRECCION') {
+      return 'La dirección fue correcta, pero la operación no cumplió completamente el objetivo. Es útil para ajustar entrada, stop o target.';
+    }
+
+    return 'La señal sigue pendiente de validación.';
   }
 
   function formatProb(value) {
@@ -749,6 +831,43 @@ export default function Page() {
                               {formatProb(best.historicalProbability)}
                             </b>
                           </div>
+
+                          <div
+                            style={{
+                              background: '#0f172a',
+                              padding: 12,
+                              borderRadius: 12
+                            }}
+                          >
+                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                              RIESGO
+                            </div>
+                            <b style={{ fontSize: 16 }}>{riskLabel(best)}</b>
+                          </div>
+
+                          <div
+                            style={{
+                              background: '#0f172a',
+                              padding: 12,
+                              borderRadius: 12
+                            }}
+                          >
+                            <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                              ACCIÓN
+                            </div>
+                            <b
+                              style={{
+                                fontSize: 16,
+                                color: best.isActionable ? '#22c55e' : '#facc15'
+                              }}
+                            >
+                              {best.isActionable
+                                ? best.side === 'CALL'
+                                  ? 'Considerar CALL'
+                                  : 'Considerar PUT'
+                                : 'Esperar confirmación'}
+                            </b>
+                          </div>
                         </div>
 
                         <div
@@ -783,6 +902,43 @@ export default function Page() {
                           )
                         )}
                       </div>
+
+                      {getStrategyInfo(best.strategy) && (
+                        <>
+                          <button
+                            onClick={() => setShowStrategyHelp((v) => !v)}
+                            style={{ ...secondaryBtn, width: '100%', marginTop: 14 }}
+                          >
+                            {showStrategyHelp
+                              ? 'Ocultar cómo funciona la estrategia'
+                              : `¿Qué significa ${best.strategy}?`}
+                          </button>
+
+                          {showStrategyHelp && (
+                            <div
+                              style={{
+                                marginTop: 12,
+                                padding: 14,
+                                borderRadius: 14,
+                                background: '#020617',
+                                border: '1px solid #334155'
+                              }}
+                            >
+                              <div style={{ fontWeight: 900, color: '#19e6c2' }}>
+                                {strategyFullName(best)}
+                              </div>
+                              <p style={{ lineHeight: 1.6, color: '#cbd5e1' }}>
+                                {getStrategyInfo(best.strategy).shortDescription}
+                              </p>
+                              <div style={{ display: 'grid', gap: 7 }}>
+                                {getStrategyInfo(best.strategy).details.map((d) => (
+                                  <div key={d}>✓ {d}</div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
 
                       <button
                         onClick={() => setShowTechnical((v) => !v)}
@@ -943,8 +1099,11 @@ export default function Page() {
                           <tr style={{ color: '#94a3b8', textAlign: 'left' }}>
                             <th>Activo</th>
                             <th>Estrategia</th>
+                            <th>Nombre completo</th>
                             <th>Lectura sencilla</th>
                             <th>Calidad</th>
+                            <th>Prob. histórica</th>
+                            <th>Riesgo</th>
                             <th>RSI</th>
                             <th>Volumen</th>
                             <th>Estado</th>
@@ -970,7 +1129,14 @@ export default function Page() {
                                 </div>
                               </td>
 
-                              <td>{r.error ? 'Sin datos' : strategyName(r)}</td>
+                              <td>{r.error ? 'Sin datos' : r.strategy || '-'}</td>
+                              <td>
+                                {r.error
+                                  ? '-'
+                                  : getStrategyInfo(r.strategy)
+                                  ? getStrategyInfo(r.strategy).fullName
+                                  : 'Sin estrategia válida'}
+                              </td>
                               <td>{r.error ? r.error : humanSignal(r)}</td>
                               <td
                                 style={{
@@ -980,6 +1146,8 @@ export default function Page() {
                               >
                                 {r.qualityScore ?? 0}/100
                               </td>
+                              <td>{formatProb(r.historicalProbability)}</td>
+                              <td>{r.error ? '-' : riskLabel(r)}</td>
                               <td>{r.indicators?.rsi ?? '-'}</td>
                               <td>
                                 {r.indicators?.relativeVolume
@@ -1134,6 +1302,25 @@ export default function Page() {
                         la tasa fue{' '}
                         <b>{backtest.summary?.volume120?.returnInsideRate ?? 0}%</b>.
                       </p>
+
+                      <div
+                        style={{
+                          marginTop: 14,
+                          padding: 14,
+                          borderRadius: 14,
+                          background: '#0f172a',
+                          border: '1px solid #334155'
+                        }}
+                      >
+                        <b style={{ color: '#19e6c2' }}>¿Qué descubrió Nexora?</b>
+                        <p style={{ lineHeight: 1.7, marginBottom: 0 }}>
+                          La ventaja no se mide por una sola señal. Nexora compara
+                          cuántas veces el precio regresó a su rango normal, cuántas
+                          veces acertó la dirección y si el volumen mejoró o empeoró
+                          el resultado. Solo después de tener una muestra suficiente
+                          usamos esa cifra como probabilidad histórica.
+                        </p>
+                      </div>
                     </div>
 
                     <div style={{ overflowX: 'auto', marginTop: 16 }}>
@@ -1244,6 +1431,7 @@ export default function Page() {
                           <th>Target</th>
                           <th>Calidad</th>
                           <th>Resultado</th>
+                          <th>Aprendizaje</th>
                         </tr>
                       </thead>
 
@@ -1268,6 +1456,9 @@ export default function Page() {
                                 h.validationStatus ||
                                 h.status ||
                                 '⏳ PENDIENTE'}
+                            </td>
+                            <td style={{ minWidth: 300, color: '#cbd5e1' }}>
+                              {historyLesson(h)}
                             </td>
                           </tr>
                         ))}
@@ -1298,6 +1489,35 @@ export default function Page() {
                   <b>Reversión a la media:</b> búsqueda de regreso hacia un precio
                   más normal después de una extensión extrema.
                 </p>
+
+                <div
+                  style={{
+                    marginTop: 18,
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                    gap: 12
+                  }}
+                >
+                  {Object.entries(STRATEGY_INFO).map(([key, info]) => (
+                    <div
+                      key={key}
+                      style={{
+                        padding: 14,
+                        borderRadius: 14,
+                        background: '#020617',
+                        border: '1px solid #334155'
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, color: '#19e6c2' }}>
+                        {key} – {info.fullName}
+                      </div>
+                      <div style={{ color: '#94a3b8', marginTop: 4 }}>
+                        {info.friendlyName}
+                      </div>
+                      <p style={{ lineHeight: 1.6 }}>{info.shortDescription}</p>
+                    </div>
+                  ))}
+                </div>
               </Card>
             )}
           </div>
@@ -1308,10 +1528,24 @@ export default function Page() {
                 <h3 style={{ marginTop: 0 }}>Estrategias</h3>
 
                 <div style={{ display: 'grid', gap: 10 }}>
-                  <StrategyBadge name="MRBB" subtitle="Reversión" active />
-                  <StrategyBadge name="NCS" subtitle="Tendencia" active />
-                  <StrategyBadge name="Breakout" subtitle="Próximamente" />
-                  <StrategyBadge name="Gap Hunter" subtitle="Próximamente" />
+                  <StrategyBadge
+                    name="NCS"
+                    subtitle="Nexora Confluence Strategy · Tendencia y Confluencia"
+                    active
+                  />
+                  <StrategyBadge
+                    name="MRBB"
+                    subtitle="Mean Reversion Bollinger Bands · Reversión a la Media"
+                    active
+                  />
+                  <StrategyBadge
+                    name="BPS"
+                    subtitle="Breakout Precision Strategy · Próximamente"
+                  />
+                  <StrategyBadge
+                    name="GHS"
+                    subtitle="Gap Hunter Strategy · Próximamente"
+                  />
                 </div>
               </Card>
 
