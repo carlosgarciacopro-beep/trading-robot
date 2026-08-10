@@ -1,6 +1,6 @@
 // lib/tradePlanner.js
-// NEXORA v3.1
-// Trade Planner + Option Chain Real Integration
+// NEXORA v3.3
+// Trade Planner + Smart Option Chain Execution Gate
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -115,6 +115,15 @@ function normalizeContractSummary(contract) {
       ? contract.liquidity.reasons
       : [],
     isLiquid: Boolean(contract?.liquidity?.isLiquid),
+    validationStatus: contract?.validationStatus || null,
+    combinedScore: num(contract?.combinedScore),
+    executionScore: num(contract?.execution?.score),
+    executionReasons: Array.isArray(contract?.execution?.reasons)
+      ? contract.execution.reasons
+      : [],
+    executionHardFails: Array.isArray(contract?.execution?.hardFails)
+      ? contract.execution.hardFails
+      : [],
     source: contract.source || null
   };
 }
@@ -124,88 +133,77 @@ function evaluateContract(contract) {
     return {
       status: 'PENDING',
       score: 0,
-      reasons: ['No hay contrato real seleccionado']
+      reasons: ['No hay contrato real validado']
     };
   }
 
-  let score = 0;
-  const reasons = [];
+  const providerStatus = contract?.validationStatus || null;
 
-  const spreadPct = num(contract.spreadPct);
-  const volume = num(contract.volume, 0);
-  const openInterest = num(contract.openInterest, 0);
-  const delta = Math.abs(num(contract.delta, 0));
-  const theta = Math.abs(num(contract.theta, 0));
-  const liquidityScore = num(contract?.liquidity?.score, 0);
-
-  if (spreadPct !== null) {
-    if (spreadPct <= 10) {
-      score += 25;
-      reasons.push('Spread bueno');
-    } else if (spreadPct <= 20) {
-      score += 15;
-      reasons.push('Spread aceptable');
-    } else {
-      reasons.push('Spread amplio');
-    }
-  } else {
-    reasons.push('Spread no disponible');
+  if (providerStatus === 'SIN_COTIZACION') {
+    return {
+      status: 'NO_APTO',
+      score: num(contract?.combinedScore, 0),
+      reasons: ['El contrato no tiene bid/ask válido']
+    };
   }
 
-  if (volume >= 100) {
-    score += 20;
-    reasons.push('Volumen suficiente');
-  } else if (volume >= 25) {
-    score += 10;
-    reasons.push('Volumen moderado');
-  } else {
-    reasons.push('Volumen bajo');
+  if (providerStatus === 'NO_APTO') {
+    return {
+      status: 'NO_APTO',
+      score: num(contract?.combinedScore, 0),
+      reasons: [
+        ...(Array.isArray(contract?.execution?.hardFails)
+          ? contract.execution.hardFails
+          : []),
+        ...(Array.isArray(contract?.execution?.reasons)
+          ? contract.execution.reasons
+          : [])
+      ]
+    };
   }
 
-  if (openInterest >= 500) {
-    score += 20;
-    reasons.push('Open Interest bueno');
-  } else if (openInterest >= 100) {
-    score += 10;
-    reasons.push('Open Interest aceptable');
-  } else {
-    reasons.push('Open Interest bajo');
+  if (providerStatus === 'ESPERAR') {
+    return {
+      status: 'ESPERAR',
+      score: num(contract?.combinedScore, 0),
+      reasons: Array.isArray(contract?.execution?.reasons)
+        ? contract.execution.reasons
+        : ['Contrato real todavía en revisión']
+    };
   }
 
-  if (delta >= 0.20 && delta <= 0.70) {
-    score += 15;
-    reasons.push('Delta operable');
-  } else if (delta > 0) {
-    reasons.push('Delta fuera del rango preferido');
-  } else {
-    reasons.push('Delta no disponible');
+  if (providerStatus === 'APTO') {
+    return {
+      status: 'APTO',
+      score: num(contract?.combinedScore, 100),
+      reasons: [
+        ...(Array.isArray(contract?.liquidity?.reasons)
+          ? contract.liquidity.reasons
+          : []),
+        ...(Array.isArray(contract?.execution?.reasons)
+          ? contract.execution.reasons
+          : [])
+      ]
+    };
   }
 
-  if (theta > 0 && theta <= 0.30) {
-    score += 10;
-    reasons.push('Theta aceptable');
-  } else if (theta > 0) {
-    reasons.push('Theta elevado');
-  } else {
-    reasons.push('Theta no disponible');
-  }
+  // Compatibilidad con respuestas antiguas: nunca permite entrar si no
+  // puede confirmar bid/ask real y métricas mínimas.
+  const bid = num(contract.bid, 0);
+  const ask = num(contract.ask, 0);
 
-  if (liquidityScore >= 65) {
-    score += 10;
-    reasons.push('Liquidez general buena');
-  } else if (liquidityScore >= 50) {
-    score += 5;
-    reasons.push('Liquidez general aceptable');
-  } else {
-    reasons.push('Liquidez general limitada');
+  if (!(bid > 0 && ask > 0 && ask >= bid)) {
+    return {
+      status: 'NO_APTO',
+      score: 0,
+      reasons: ['Bid/ask real no disponible']
+    };
   }
-
-  score = clamp(score, 0, 100);
 
   return {
-    status: score >= 75 ? 'APTO' : score >= 55 ? 'ESPERAR' : 'NO_APTO',
-    score,
-    reasons
+    status: 'ESPERAR',
+    score: num(contract?.liquidity?.score, 0),
+    reasons: ['Contrato real recibido, pero falta estado APTO del validador']
   };
 }
 
@@ -420,7 +418,9 @@ function getExecutionStatus(analysis, rr, contractEvaluation) {
     return 'ESPERAR_CONFIRMACION';
   }
 
-  if (contractEvaluation?.status === 'NO_APTO') {
+  // La señal técnica por sí sola nunca autoriza ejecución.
+  // El contrato real debe estar explícitamente APTO.
+  if (contractEvaluation?.status !== 'APTO') {
     return 'ESPERAR_CONFIRMACION';
   }
 
@@ -437,35 +437,72 @@ function getSuggestedContracts(analysis) {
   const real = getRealOptionContracts(analysis);
 
   if (real.primary) {
+    const primarySummary = normalizeContractSummary(real.primary);
+    const alternativeSummary = normalizeContractSummary(real.alternative);
+
+    const primaryIsApto =
+      real.primary?.validationStatus === 'APTO';
+
+    const alternativeIsApto =
+      real.alternative?.validationStatus === 'APTO';
+
     return {
       source: 'REAL_OPTION_CHAIN',
       provider: real.provider || 'massive',
-      isRealData: true,
-      primary: normalizeContractSummary(real.primary),
-      alternative: normalizeContractSummary(real.alternative),
-      expiration: real.primary?.expiration || null,
-      premiumTarget:
-        real.primary?.mid ||
-        real.primary?.ask ||
-        real.primary?.last ||
+      isRealData: Boolean(real.isRealData),
+
+      // Solo un contrato APTO puede presentarse como contrato definitivo.
+      primary: primaryIsApto ? primarySummary : null,
+      alternative:
+        primaryIsApto && alternativeIsApto
+          ? alternativeSummary
+          : null,
+
+      // Los candidatos quedan visibles para diagnóstico, no para ejecución.
+      candidatePrimary: primarySummary,
+      candidateAlternative: alternativeSummary,
+      validationStatus:
+        real.primary?.validationStatus ||
+        real.status ||
         null,
+
+      expiration:
+        primaryIsApto
+          ? real.primary?.expiration || null
+          : null,
+
+      premiumTarget:
+        primaryIsApto
+          ? real.primary?.mid ||
+            real.primary?.ask ||
+            real.primary?.last ||
+            null
+          : null,
+
       strikeStyle:
-        real.primary?.inTheMoney
-          ? 'ITM'
-          : 'ATM/OTM según distancia al precio'
+        primaryIsApto
+          ? real.primary?.inTheMoney
+            ? 'ITM'
+            : 'ATM/OTM según distancia al precio'
+          : null
     };
   }
 
   const optionIdea = analysis?.optionIdea || {};
 
   return {
-    source: 'ESTIMATED_OPTION_IDEA',
+    source: 'TECHNICAL_REFERENCE_ONLY',
     provider: null,
     isRealData: false,
-    primary: optionIdea.contract || null,
-    alternative: optionIdea.alternativeContract || null,
-    expiration: optionIdea.expiration || null,
-    premiumTarget: optionIdea.premiumTarget || null,
+    primary: null,
+    alternative: null,
+    candidatePrimary: null,
+    candidateAlternative: null,
+    technicalPrimary: optionIdea.contract || null,
+    technicalAlternative: optionIdea.alternativeContract || null,
+    validationStatus: 'PENDING',
+    expiration: null,
+    premiumTarget: null,
     strikeStyle: optionIdea.strikeStyle || null
   };
 }
@@ -619,7 +656,10 @@ export function buildTradePlan(analysis) {
     contractEvaluation,
 
     optionChainStatus: {
-      connected: Boolean(realOptionContracts.primary),
+      connected: Boolean(realOptionContracts.isRealData),
+      hasCandidate: Boolean(realOptionContracts.primary),
+      hasAptoContract:
+        realOptionContracts.primary?.validationStatus === 'APTO',
       provider: realOptionContracts.provider || null,
       isRealData: Boolean(realOptionContracts.isRealData),
       status: realOptionContracts.status || null,
@@ -652,8 +692,10 @@ export function buildTradePlan(analysis) {
         : 'Nexora no encontró una dirección operable.',
 
     note:
-      realOptionContracts.primary
-        ? 'El plan ya incorpora datos reales de Option Chain. Antes de ejecutar, Nexora valida spread, volumen, open interest, delta, theta, IV y liquidez del contrato.'
-        : 'El plan todavía usa una idea estimada de contrato. Falta adjuntar la Option Chain real al análisis principal.'
+      realOptionContracts.primary?.validationStatus === 'APTO'
+        ? 'El plan incorpora un contrato real APTO. La ejecución todavía depende de que la señal técnica y el precio de entrada sigan confirmados.'
+        : realOptionContracts.primary
+        ? 'Massive entregó un candidato real, pero Nexora no lo presenta como contrato definitivo hasta que el Validator lo marque APTO.'
+        : 'No existe un contrato real validado. La idea de strike técnico queda únicamente como referencia y no autoriza ejecución.'
   };
 }
