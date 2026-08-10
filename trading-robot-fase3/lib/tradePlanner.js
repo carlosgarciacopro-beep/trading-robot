@@ -1,3 +1,7 @@
+// lib/tradePlanner.js
+// NEXORA v3.1
+// Trade Planner + Option Chain Real Integration
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -6,6 +10,11 @@ function round(value, decimals = 2) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Number(n.toFixed(decimals));
+}
+
+function num(value, fallback = null) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function getEntryZone(entry, atr, side) {
@@ -18,25 +27,190 @@ function getEntryZone(entry, atr, side) {
   const width = Math.max(0.15, a * 0.15);
 
   if (side === 'CALL') {
-    return {
-      min: round(e),
-      max: round(e + width)
-    };
+    return { min: round(e), max: round(e + width) };
   }
 
   if (side === 'PUT') {
-    return {
-      min: round(e - width),
-      max: round(e)
-    };
+    return { min: round(e - width), max: round(e) };
   }
 
   return { min: null, max: null };
 }
 
+function getRealOptionContracts(analysis) {
+  const optionChain = analysis?.optionChain || {};
+
+  const primary =
+    optionChain.primaryContract ||
+    optionChain?.summary?.primaryContract ||
+    optionChain?.selection?.primary ||
+    null;
+
+  const alternative =
+    optionChain.alternativeContract ||
+    optionChain?.summary?.alternativeContract ||
+    optionChain?.selection?.alternative ||
+    null;
+
+  return {
+    provider:
+      optionChain?.provider?.name ||
+      optionChain?.provider ||
+      null,
+
+    source:
+      optionChain?.provider?.source ||
+      optionChain?.source ||
+      null,
+
+    isRealData:
+      optionChain?.provider?.isRealData ??
+      optionChain?.isRealData ??
+      Boolean(primary),
+
+    status:
+      optionChain?.summary?.status ||
+      optionChain?.selection?.status ||
+      optionChain?.status ||
+      null,
+
+    warning:
+      optionChain?.warning ||
+      null,
+
+    primary,
+    alternative
+  };
+}
+
+function normalizeContractSummary(contract) {
+  if (!contract) return null;
+
+  return {
+    symbol: contract.symbol || contract.contractSymbol || null,
+    side: contract.side || null,
+    expiration: contract.expiration || null,
+    dte: num(contract.dte),
+    strike: round(contract.strike),
+    bid: round(contract.bid),
+    ask: round(contract.ask),
+    last: round(contract.last),
+    mid: round(contract.mid),
+    spread: round(contract.spread),
+    spreadPct: round(contract.spreadPct),
+    volume: num(contract.volume, 0),
+    openInterest: num(contract.openInterest, 0),
+    impliedVolatility: round(contract.impliedVolatility, 4),
+    delta: round(contract.delta, 4),
+    gamma: round(contract.gamma, 4),
+    theta: round(contract.theta, 4),
+    vega: round(contract.vega, 4),
+    rho: round(contract.rho, 4),
+    underlyingPrice: round(contract.underlyingPrice),
+    distanceFromPricePct: round(contract.distanceFromPricePct),
+    inTheMoney: Boolean(contract.inTheMoney),
+    liquidityScore: num(contract?.liquidity?.score),
+    liquidityStatus: contract?.liquidity?.status || null,
+    liquidityReasons: Array.isArray(contract?.liquidity?.reasons)
+      ? contract.liquidity.reasons
+      : [],
+    isLiquid: Boolean(contract?.liquidity?.isLiquid),
+    source: contract.source || null
+  };
+}
+
+function evaluateContract(contract) {
+  if (!contract) {
+    return {
+      status: 'PENDING',
+      score: 0,
+      reasons: ['No hay contrato real seleccionado']
+    };
+  }
+
+  let score = 0;
+  const reasons = [];
+
+  const spreadPct = num(contract.spreadPct);
+  const volume = num(contract.volume, 0);
+  const openInterest = num(contract.openInterest, 0);
+  const delta = Math.abs(num(contract.delta, 0));
+  const theta = Math.abs(num(contract.theta, 0));
+  const liquidityScore = num(contract?.liquidity?.score, 0);
+
+  if (spreadPct !== null) {
+    if (spreadPct <= 10) {
+      score += 25;
+      reasons.push('Spread bueno');
+    } else if (spreadPct <= 20) {
+      score += 15;
+      reasons.push('Spread aceptable');
+    } else {
+      reasons.push('Spread amplio');
+    }
+  } else {
+    reasons.push('Spread no disponible');
+  }
+
+  if (volume >= 100) {
+    score += 20;
+    reasons.push('Volumen suficiente');
+  } else if (volume >= 25) {
+    score += 10;
+    reasons.push('Volumen moderado');
+  } else {
+    reasons.push('Volumen bajo');
+  }
+
+  if (openInterest >= 500) {
+    score += 20;
+    reasons.push('Open Interest bueno');
+  } else if (openInterest >= 100) {
+    score += 10;
+    reasons.push('Open Interest aceptable');
+  } else {
+    reasons.push('Open Interest bajo');
+  }
+
+  if (delta >= 0.20 && delta <= 0.70) {
+    score += 15;
+    reasons.push('Delta operable');
+  } else if (delta > 0) {
+    reasons.push('Delta fuera del rango preferido');
+  } else {
+    reasons.push('Delta no disponible');
+  }
+
+  if (theta > 0 && theta <= 0.30) {
+    score += 10;
+    reasons.push('Theta aceptable');
+  } else if (theta > 0) {
+    reasons.push('Theta elevado');
+  } else {
+    reasons.push('Theta no disponible');
+  }
+
+  if (liquidityScore >= 65) {
+    score += 10;
+    reasons.push('Liquidez general buena');
+  } else if (liquidityScore >= 50) {
+    score += 5;
+    reasons.push('Liquidez general aceptable');
+  } else {
+    reasons.push('Liquidez general limitada');
+  }
+
+  score = clamp(score, 0, 100);
+
+  return {
+    status: score >= 75 ? 'APTO' : score >= 55 ? 'ESPERAR' : 'NO_APTO',
+    score,
+    reasons
+  };
+}
+
 function buildInvalidationRules(analysis) {
   const side = analysis?.side;
-  const indicators = analysis?.indicators || {};
   const levels = analysis?.levels || {};
   const rules = [];
 
@@ -44,7 +218,6 @@ function buildInvalidationRules(analysis) {
     if (levels.stopCall != null) {
       rules.push(`El activo pierde ${levels.stopCall}`);
     }
-
     rules.push('RSI pierde fuerza y cae por debajo de 48');
     rules.push('MACD cambia a negativo');
     rules.push('Aparece volumen vendedor fuerte');
@@ -54,7 +227,6 @@ function buildInvalidationRules(analysis) {
     if (levels.stopPut != null) {
       rules.push(`El activo supera ${levels.stopPut}`);
     }
-
     rules.push('RSI recupera fuerza por encima de 52');
     rules.push('MACD cambia a positivo');
     rules.push('Aparece volumen comprador fuerte');
@@ -68,54 +240,145 @@ function buildInvalidationRules(analysis) {
     rules.push('El riesgo general del mercado permanece elevado');
   }
 
+  const contract = getRealOptionContracts(analysis).primary;
+
+  if (contract?.liquidity?.isLiquid === false) {
+    rules.push('La liquidez del contrato real es insuficiente');
+  }
+
+  if (
+    contract?.spreadPct != null &&
+    Number(contract.spreadPct) > 20
+  ) {
+    rules.push('El spread bid/ask del contrato supera 20%');
+  }
+
   return rules;
 }
 
 function buildChecklist(analysis) {
   const indicators = analysis?.indicators || {};
   const side = analysis?.side;
+  const contract = getRealOptionContracts(analysis).primary;
   const checklist = [];
 
-  checklist.push({
-    key: 'spread',
-    label: 'Spread bid/ask pequeño',
-    status: 'PENDING',
-    note: 'Requiere datos reales de la cadena de opciones'
-  });
+  if (contract) {
+    const spreadPct = num(contract.spreadPct);
+    const volume = num(contract.volume, 0);
+    const openInterest = num(contract.openInterest, 0);
+    const delta = Math.abs(num(contract.delta, 0));
+    const theta = Math.abs(num(contract.theta, 0));
 
-  checklist.push({
-    key: 'volume',
-    label: 'Volumen suficiente',
-    status:
-      Number(indicators.relativeVolume || 0) >= 1
-        ? 'PASS'
-        : 'CAUTION',
-    note:
-      Number(indicators.relativeVolume || 0) >= 1
-        ? `Volumen relativo ${indicators.relativeVolume}x`
-        : `Volumen relativo ${indicators.relativeVolume || 0}x`
-  });
+    checklist.push({
+      key: 'spread',
+      label: 'Spread bid/ask pequeño',
+      status:
+        spreadPct !== null && spreadPct <= 15
+          ? 'PASS'
+          : spreadPct !== null && spreadPct <= 25
+          ? 'CAUTION'
+          : 'FAIL',
+      note:
+        spreadPct !== null
+          ? `Spread ${round(spreadPct)}%`
+          : 'Spread no disponible'
+    });
 
-  checklist.push({
-    key: 'openInterest',
-    label: 'Open Interest suficiente',
-    status: 'PENDING',
-    note: 'Se validará cuando Nexora lea la cadena real'
-  });
+    checklist.push({
+      key: 'volume',
+      label: 'Volumen suficiente',
+      status:
+        volume >= 100
+          ? 'PASS'
+          : volume >= 25
+          ? 'CAUTION'
+          : 'FAIL',
+      note: `Volumen del contrato: ${volume}`
+    });
 
-  checklist.push({
-    key: 'delta',
-    label: 'Delta adecuada',
-    status: 'PENDING',
-    note: 'Se validará con la opción seleccionada'
-  });
+    checklist.push({
+      key: 'openInterest',
+      label: 'Open Interest suficiente',
+      status:
+        openInterest >= 500
+          ? 'PASS'
+          : openInterest >= 100
+          ? 'CAUTION'
+          : 'FAIL',
+      note: `Open Interest: ${openInterest}`
+    });
 
-  checklist.push({
-    key: 'theta',
-    label: 'Theta aceptable',
-    status: 'PENDING',
-    note: 'Se validará con la opción seleccionada'
-  });
+    checklist.push({
+      key: 'delta',
+      label: 'Delta adecuada',
+      status:
+        delta >= 0.20 && delta <= 0.70
+          ? 'PASS'
+          : delta > 0
+          ? 'CAUTION'
+          : 'FAIL',
+      note:
+        delta > 0
+          ? `Delta ${round(delta, 4)}`
+          : 'Delta no disponible'
+    });
+
+    checklist.push({
+      key: 'theta',
+      label: 'Theta aceptable',
+      status:
+        theta > 0 && theta <= 0.30
+          ? 'PASS'
+          : theta > 0
+          ? 'CAUTION'
+          : 'FAIL',
+      note:
+        theta > 0
+          ? `Theta ${round(theta, 4)}`
+          : 'Theta no disponible'
+    });
+  } else {
+    checklist.push({
+      key: 'spread',
+      label: 'Spread bid/ask pequeño',
+      status: 'PENDING',
+      note: 'Requiere datos reales de la cadena de opciones'
+    });
+
+    checklist.push({
+      key: 'volume',
+      label: 'Volumen suficiente',
+      status:
+        Number(indicators.relativeVolume || 0) >= 1
+          ? 'PASS'
+          : 'CAUTION',
+      note:
+        Number(indicators.relativeVolume || 0) >= 1
+          ? `Volumen relativo ${indicators.relativeVolume}x`
+          : `Volumen relativo ${indicators.relativeVolume || 0}x`
+    });
+
+    checklist.push({
+      key: 'openInterest',
+      label: 'Open Interest suficiente',
+      status: 'PENDING',
+      note: 'Se validará cuando Nexora lea la cadena real'
+    });
+
+    checklist.push({
+      key: 'delta',
+      label: 'Delta adecuada',
+      status: 'PENDING',
+      note: 'Se validará con la opción seleccionada'
+    });
+
+    checklist.push({
+      key: 'theta',
+      label: 'Theta aceptable',
+      status: 'PENDING',
+      note: 'Se validará con la opción seleccionada'
+    });
+  }
 
   checklist.push({
     key: 'direction',
@@ -135,7 +398,7 @@ function buildChecklist(analysis) {
   return checklist;
 }
 
-function getExecutionStatus(analysis, rr) {
+function getExecutionStatus(analysis, rr, contractEvaluation) {
   if (!analysis) return 'NO_OPERAR';
 
   if (analysis.side === 'NEUTRAL') {
@@ -157,6 +420,10 @@ function getExecutionStatus(analysis, rr) {
     return 'ESPERAR_CONFIRMACION';
   }
 
+  if (contractEvaluation?.status === 'NO_APTO') {
+    return 'ESPERAR_CONFIRMACION';
+  }
+
   return 'LISTO_PARA_ENTRAR';
 }
 
@@ -167,9 +434,34 @@ function getExecutionLabel(status) {
 }
 
 function getSuggestedContracts(analysis) {
+  const real = getRealOptionContracts(analysis);
+
+  if (real.primary) {
+    return {
+      source: 'REAL_OPTION_CHAIN',
+      provider: real.provider || 'massive',
+      isRealData: true,
+      primary: normalizeContractSummary(real.primary),
+      alternative: normalizeContractSummary(real.alternative),
+      expiration: real.primary?.expiration || null,
+      premiumTarget:
+        real.primary?.mid ||
+        real.primary?.ask ||
+        real.primary?.last ||
+        null,
+      strikeStyle:
+        real.primary?.inTheMoney
+          ? 'ITM'
+          : 'ATM/OTM según distancia al precio'
+    };
+  }
+
   const optionIdea = analysis?.optionIdea || {};
 
   return {
+    source: 'ESTIMATED_OPTION_IDEA',
+    provider: null,
+    isRealData: false,
     primary: optionIdea.contract || null,
     alternative: optionIdea.alternativeContract || null,
     expiration: optionIdea.expiration || null,
@@ -216,9 +508,7 @@ export function buildTradePlan(analysis) {
     ));
 
   const target2 = Number(levels.target2);
-
   const atr = Number(indicators.atr || 0);
-
   const entryZone = getEntryZone(entry, atr, side);
 
   const riskPerShare =
@@ -246,9 +536,13 @@ export function buildTradePlan(analysis) {
       ? round(rewardToTarget2 / Math.max(0.01, riskPerShare), 2)
       : null;
 
+  const realOptionContracts = getRealOptionContracts(analysis);
+  const contractEvaluation = evaluateContract(realOptionContracts.primary);
+
   const executionStatus = getExecutionStatus(
     analysis,
-    riskReward1
+    riskReward1,
+    contractEvaluation
   );
 
   const quality = clamp(
@@ -262,20 +556,22 @@ export function buildTradePlan(analysis) {
   if (
     quality >= 90 &&
     Number(riskReward1 || 0) >= 1.8 &&
-    Number(marketBrain.risk || 50) <= 35
+    Number(marketBrain.risk || 50) <= 35 &&
+    contractEvaluation.status === 'APTO'
   ) {
     difficulty = 'BAJA';
   } else if (
     quality < 75 ||
     Number(marketBrain.risk || 50) >= 65 ||
-    Number(riskReward1 || 0) < 1.2
+    Number(riskReward1 || 0) < 1.2 ||
+    contractEvaluation.status === 'NO_APTO'
   ) {
     difficulty = 'ALTA';
   }
 
   const contracts = getSuggestedContracts(analysis);
 
-  const plan = {
+  return {
     symbol: analysis.symbol,
     mode: analysis.mode,
     side,
@@ -320,6 +616,15 @@ export function buildTradePlan(analysis) {
         : '2 a 5 días como referencia',
 
     contracts,
+    contractEvaluation,
+
+    optionChainStatus: {
+      connected: Boolean(realOptionContracts.primary),
+      provider: realOptionContracts.provider || null,
+      isRealData: Boolean(realOptionContracts.isRealData),
+      status: realOptionContracts.status || null,
+      warning: realOptionContracts.warning || null
+    },
 
     premiumRisk: {
       stop:
@@ -347,8 +652,8 @@ export function buildTradePlan(analysis) {
         : 'Nexora no encontró una dirección operable.',
 
     note:
-      'El plan usa niveles técnicos del activo. Spread, open interest, delta, theta e IV requieren datos reales de la cadena de opciones antes de ejecutar.'
+      realOptionContracts.primary
+        ? 'El plan ya incorpora datos reales de Option Chain. Antes de ejecutar, Nexora valida spread, volumen, open interest, delta, theta, IV y liquidez del contrato.'
+        : 'El plan todavía usa una idea estimada de contrato. Falta adjuntar la Option Chain real al análisis principal.'
   };
-
-  return plan;
 }
