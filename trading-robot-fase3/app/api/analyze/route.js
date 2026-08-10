@@ -678,8 +678,8 @@ function applyMarketContext(analysis, market) {
   };
 }
 
-// NEXORA v3.1
-// Conecta Analyze -> Massive Option Chain -> Trade Planner.
+// NEXORA v3.3
+// Conecta Analyze -> Massive Smart Contract Search -> Trade Planner.
 // Si Massive falla, el análisis técnico sigue funcionando.
 
 async function fetchOptionChainForAnalysis(req, analysis) {
@@ -715,6 +715,11 @@ async function fetchOptionChainForAnalysis(req, analysis) {
       url.searchParams.set("price", String(price));
     }
 
+    const targetStrike = Number(analysis?.optionIdea?.strike);
+    if (Number.isFinite(targetStrike)) {
+      url.searchParams.set("targetStrike", String(targetStrike));
+    }
+
     if (analysis.mode === "intraday") {
       url.searchParams.set("minDte", "0");
       url.searchParams.set("maxDte", "3");
@@ -726,6 +731,14 @@ async function fetchOptionChainForAnalysis(req, analysis) {
     }
 
     url.searchParams.set("minLiquidityScore", "50");
+    url.searchParams.set("minCombinedScore", "50");
+    url.searchParams.set("minDelta", analysis.mode === "intraday" ? "0.20" : "0.15");
+    url.searchParams.set("idealDeltaLow", "0.20");
+    url.searchParams.set("idealDeltaHigh", "0.45");
+    url.searchParams.set("maxDelta", "0.70");
+    url.searchParams.set("maxThetaAbs", analysis.mode === "intraday" ? "0.35" : "0.25");
+    url.searchParams.set("maxPages", "4");
+    url.searchParams.set("refreshCandidates", "12");
 
     const response = await fetch(url.toString(), {
       method: "GET",
@@ -791,6 +804,8 @@ async function fetchOptionChainForAnalysis(req, analysis) {
       warning: payload.warning || null,
 
       request: payload.request || null,
+      contracts: Array.isArray(payload.contracts) ? payload.contracts : [],
+      diagnostics: payload?.provider?.diagnostics || null,
 
       version: payload.version || null
     };
