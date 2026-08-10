@@ -637,9 +637,6 @@ function applyMarketContext(analysis, market) {
 
   let isActionable = Boolean(analysis.isActionable);
 
-  // Market Brain funciona como filtro de contexto, no reemplaza la estrategia.
-  // Si el mercado está claramente en contra o el riesgo es extremo,
-  // Nexora exige esperar confirmación adicional.
   if (isActionable && marketGate === 'CAUTION') {
     isActionable = false;
   }
@@ -679,6 +676,140 @@ function applyMarketContext(analysis, market) {
       ...marketReasons
     ]
   };
+}
+
+// NEXORA v3.1
+// Conecta Analyze -> Massive Option Chain -> Trade Planner.
+// Si Massive falla, el análisis técnico sigue funcionando.
+
+async function fetchOptionChainForAnalysis(req, analysis) {
+  if (!analysis || !["CALL", "PUT"].includes(analysis.side)) {
+    return {
+      provider: {
+        name: "massive",
+        source: "massive",
+        isRealData: false,
+        message: "No se consulta Option Chain porque no hay dirección CALL/PUT."
+      },
+      summary: {
+        primaryContract: null,
+        alternativeContract: null,
+        status: "SIN_DIRECCION"
+      },
+      warning: "Sin dirección operable."
+    };
+  }
+
+  try {
+    const url = new URL("/api/options", req.url);
+
+    url.searchParams.set("symbol", analysis.symbol);
+    url.searchParams.set("side", analysis.side);
+
+    const price =
+      Number(analysis.currentPrice) ||
+      Number(analysis.close) ||
+      null;
+
+    if (Number.isFinite(price)) {
+      url.searchParams.set("price", String(price));
+    }
+
+    if (analysis.mode === "intraday") {
+      url.searchParams.set("minDte", "0");
+      url.searchParams.set("maxDte", "3");
+      url.searchParams.set("maxDistancePct", "8");
+    } else {
+      url.searchParams.set("minDte", "5");
+      url.searchParams.set("maxDte", "21");
+      url.searchParams.set("maxDistancePct", "10");
+    }
+
+    url.searchParams.set("minLiquidityScore", "50");
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+    let payload = null;
+
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload) {
+      return {
+        provider: {
+          name: "massive",
+          source: "massive",
+          isRealData: false,
+          message: `Option Chain respondió HTTP ${response.status}.`
+        },
+        summary: {
+          primaryContract: null,
+          alternativeContract: null,
+          status: "ERROR_OPTION_CHAIN"
+        },
+        warning:
+          payload?.error ||
+          payload?.warning ||
+          `No fue posible leer Option Chain. HTTP ${response.status}.`
+      };
+    }
+
+    return {
+      provider: payload.provider || {
+        name: "massive",
+        source: "massive",
+        isRealData: false
+      },
+
+      summary: payload.summary || {
+        primaryContract: null,
+        alternativeContract: null,
+        status: "SIN_CONTRATO"
+      },
+
+      selection: payload.selection || null,
+
+      primaryContract:
+        payload?.summary?.primaryContract ||
+        payload?.selection?.primary ||
+        null,
+
+      alternativeContract:
+        payload?.summary?.alternativeContract ||
+        payload?.selection?.alternative ||
+        null,
+
+      warning: payload.warning || null,
+
+      request: payload.request || null,
+
+      version: payload.version || null
+    };
+  } catch (error) {
+    return {
+      provider: {
+        name: "massive",
+        source: "massive",
+        isRealData: false,
+        message: "No fue posible conectar Analyze con Option Chain."
+      },
+      summary: {
+        primaryContract: null,
+        alternativeContract: null,
+        status: "ERROR_OPTION_CHAIN"
+      },
+      warning: error?.message || "Error desconocido en Option Chain."
+    };
+  }
 }
 
 export async function GET(req) {
@@ -741,11 +872,17 @@ export async function GET(req) {
         : "SWING Diario + confirmación 1H / 15MIN / 5MIN";
 
     analysis.marketBrain = market;
+
+    // NUEVO: consulta la cadena real antes de construir Trade Planner.
+    analysis.optionChain = await fetchOptionChainForAnalysis(req, analysis);
+
+    // Trade Planner ya puede validar el contrato real.
     analysis.tradePlan = buildTradePlan(analysis);
 
     return Response.json({
       analysis,
       market,
+      optionChain: analysis.optionChain,
       tradePlan: analysis.tradePlan,
       disclaimer: "Solo educativo; no es consejo financiero oficial."
     });
