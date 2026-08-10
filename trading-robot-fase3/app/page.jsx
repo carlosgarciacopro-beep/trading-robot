@@ -776,6 +776,117 @@ export default function Page() {
     return 'ESPERAR';
   }
 
+
+  function getOptionChainState(a, plan = null) {
+    const oc = a?.optionChain || {};
+    const provider = oc?.provider || {};
+    const primary =
+      oc?.summary?.primaryContract ||
+      oc?.selection?.primary ||
+      oc?.primaryContract ||
+      plan?.contractData ||
+      null;
+
+    const rawStatus =
+      primary?.validationStatus ||
+      oc?.summary?.validationStatus ||
+      oc?.summary?.status ||
+      oc?.selection?.status ||
+      oc?.status ||
+      null;
+
+    const isRealData =
+      provider?.isRealData ??
+      oc?.isRealData ??
+      Boolean(primary);
+
+    if (primary && rawStatus === 'APTO') {
+      return {
+        code: 'VALIDADA',
+        label: '✅ VALIDADA',
+        color: '#22c55e',
+        detail: 'Contrato real apto'
+      };
+    }
+
+    if (primary && rawStatus === 'ESPERAR') {
+      return {
+        code: 'EN_REVISION',
+        label: '🟡 EN REVISIÓN',
+        color: '#facc15',
+        detail: 'Contrato real aún no apto'
+      };
+    }
+
+    if (rawStatus === 'SIN_COTIZACION') {
+      return {
+        code: 'SIN_COTIZACION',
+        label: '⚠️ SIN COTIZACIÓN',
+        color: '#fb923c',
+        detail: 'Bid/ask no válido'
+      };
+    }
+
+    if (rawStatus === 'NO_APTO') {
+      return {
+        code: 'NO_APTO',
+        label: '🔴 NO APTO',
+        color: '#ef4444',
+        detail: 'Ningún contrato cumple filtros'
+      };
+    }
+
+    if (isRealData && !primary) {
+      return {
+        code: 'PENDIENTE',
+        label: '⚠️ PENDIENTE',
+        color: '#facc15',
+        detail: 'Sin contrato validado'
+      };
+    }
+
+    return {
+      code: 'PENDIENTE',
+      label: '⚠️ PENDIENTE',
+      color: '#facc15',
+      detail: 'Option Chain por validar'
+    };
+  }
+
+  function getExecutionUiState(a, plan = null) {
+    const optionState = getOptionChainState(a, plan);
+    const technicalReady = Boolean(a?.isActionable);
+    const planReady = plan?.status === 'LISTO_PARA_ENTRAR';
+
+    if (technicalReady && planReady && optionState.code === 'VALIDADA') {
+      return {
+        code: 'LISTO',
+        label: '🟢 LISTO',
+        color: '#22c55e',
+        detail: 'Técnica + contrato confirmados'
+      };
+    }
+
+    if (a?.side === 'NEUTRAL' || plan?.status === 'NO_OPERAR') {
+      return {
+        code: 'NO_OPERAR',
+        label: '🔴 NO OPERAR',
+        color: '#ef4444',
+        detail: 'Sin setup ejecutable'
+      };
+    }
+
+    return {
+      code: 'NO_LISTO',
+      label: '⏳ NO LISTO',
+      color: '#facc15',
+      detail:
+        optionState.code === 'VALIDADA'
+          ? 'Falta confirmación técnica'
+          : 'Falta validar Option Chain'
+    };
+  }
+
   function strategyVerdict(s, selectedId) {
     if (!s) return 'Sin datos';
     if (s.id === selectedId) return '🏆 Seleccionada';
@@ -906,10 +1017,15 @@ export default function Page() {
       risk,
       reward1,
       rr,
-      contract: optionIdea.contract || null,
-      alternativeContract: optionIdea.alternativeContract || null,
-      expiration: optionIdea.expiration || null,
-      premiumTarget: optionIdea.premiumTarget || null,
+      // Sin Option Chain real no mostramos una idea estimada como contrato definitivo.
+      contract: null,
+      alternativeContract: null,
+      contractData: null,
+      alternativeContractData: null,
+      technicalContractReference: optionIdea.contract || null,
+      technicalAlternativeReference: optionIdea.alternativeContract || null,
+      expiration: null,
+      premiumTarget: null,
       maxPremiumRisk: optionIdea.maxPremiumRisk || null,
       profitTarget: optionIdea.profitTarget || null,
       avoid: optionIdea.avoid || null,
@@ -1372,10 +1488,98 @@ export default function Page() {
                         fontWeight: 900
                       }}
                     >
-                      Calidad {safeNumber(best.qualityScore, 50)}/100
+                      Señal técnica {safeNumber(best.qualityScore, 50)}/100
                     </span>
                   )}
                 </div>
+
+                {best && (() => {
+                  const topPlan = operationPlan(best);
+                  const executionUi = getExecutionUiState(best, topPlan);
+                  const optionUi = getOptionChainState(best, topPlan);
+
+                  return (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0,1fr))',
+                        gap: 10,
+                        marginTop: 14
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: 12,
+                          borderRadius: 12,
+                          background: '#0f172a',
+                          border: `1px solid ${getQualityColor(best.qualityScore)}`
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 800 }}>
+                          SEÑAL TÉCNICA
+                        </div>
+                        <div style={{ marginTop: 5, fontWeight: 900, fontSize: 18 }}>
+                          {qualityGrade(best.qualityScore)} · {safeNumber(best.qualityScore, 50)}/100
+                        </div>
+                        <div style={{ marginTop: 3, color: '#94a3b8', fontSize: 11 }}>
+                          Calidad del setup, no autorización de entrada
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: 12,
+                          borderRadius: 12,
+                          background: '#0f172a',
+                          border: `1px solid ${executionUi.color}`
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 800 }}>
+                          ESTADO DE EJECUCIÓN
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontWeight: 900,
+                            fontSize: 18,
+                            color: executionUi.color
+                          }}
+                        >
+                          {executionUi.label}
+                        </div>
+                        <div style={{ marginTop: 3, color: '#94a3b8', fontSize: 11 }}>
+                          {executionUi.detail}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: 12,
+                          borderRadius: 12,
+                          background: '#0f172a',
+                          border: `1px solid ${optionUi.color}`
+                        }}
+                      >
+                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 800 }}>
+                          OPTION CHAIN
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontWeight: 900,
+                            fontSize: 18,
+                            color: optionUi.color
+                          }}
+                        >
+                          {optionUi.label}
+                        </div>
+                        <div style={{ marginTop: 3, color: '#94a3b8', fontSize: 11 }}>
+                          {optionUi.detail}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {best ? (
                   <>
@@ -2018,20 +2222,20 @@ export default function Page() {
                               padding: 12,
                               borderRadius: 12,
                               background:
-                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                getExecutionUiState(best, plan).code === 'LISTO'
                                   ? 'rgba(34,197,94,.08)'
                                   : plan?.status === 'NO_OPERAR'
                                   ? 'rgba(239,68,68,.08)'
                                   : 'rgba(250,204,21,.08)',
                               border: `1px solid ${
-                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                getExecutionUiState(best, plan).code === 'LISTO'
                                   ? 'rgba(34,197,94,.55)'
                                   : plan?.status === 'NO_OPERAR'
                                   ? 'rgba(239,68,68,.55)'
                                   : 'rgba(250,204,21,.45)'
                               }`,
                               color:
-                                plan?.status === 'LISTO_PARA_ENTRAR'
+                                getExecutionUiState(best, plan).code === 'LISTO'
                                   ? '#22c55e'
                                   : plan?.status === 'NO_OPERAR'
                                   ? '#ef4444'
@@ -2039,10 +2243,7 @@ export default function Page() {
                               fontWeight: 900
                             }}
                           >
-                            {plan?.statusLabel ||
-                              (best.isActionable
-                                ? '🟢 LISTO PARA ENTRAR'
-                                : '🟡 ESPERAR CONFIRMACIÓN')}
+                            {getExecutionUiState(best, plan).label}
                           </div>
 
                           <div
@@ -2127,11 +2328,11 @@ export default function Page() {
                                   marginBottom: 10
                                 }}
                               >
-                                🎯 Contrato sugerido
+                                🎯 Contrato validado
                               </div>
 
                               <div>
-                                <b>Principal:</b> {plan?.contract || 'Sin contrato todavía'}
+                                <b>Principal:</b> {plan?.contract || 'Sin contrato validado'}
                               </div>
                               <div style={{ marginTop: 6 }}>
                                 <b>Alternativa:</b>{' '}
@@ -2223,8 +2424,8 @@ export default function Page() {
                                 }}
                               >
                                 {plan?.contractData
-                                  ? 'Contrato real validado por Nexora con datos de Option Chain. Revisa spread, volumen, open interest, IV y griegas antes de ejecutar.'
-                                  : 'El contrato es una referencia técnica. Antes de comprar, Nexora debe confirmar spread, volumen, open interest y volatilidad implícita.'}
+                                  ? `Contrato real recibido de Option Chain. Estado: ${plan.contractData.validationStatus || 'EN REVISIÓN'}. Nexora exige que el contrato sea APTO antes de considerarlo ejecutable.`
+                                  : 'Nexora no mostrará una idea estimada como contrato definitivo. Debe existir un contrato real validado con bid/ask, volumen, open interest, IV, delta y theta aceptables.'}
                               </div>
                             </div>
 
