@@ -1,6 +1,6 @@
 // app/api/options/route.js
-// NEXORA v3.1
-// Option Chain API - Massive real data integration
+// NEXORA v3.2
+// Option Chain API - Massive real data integration + Validator v2
 
 import { NextResponse } from "next/server";
 import {
@@ -73,11 +73,40 @@ function getRulesFromParams(searchParams) {
       0,
       100
     ),
+    minCombinedScore: clamp(
+      toNumber(searchParams.get("minCombinedScore"), 50),
+      0,
+      100
+    ),
     minDte,
     maxDte,
     maxDistancePct: Math.max(
       0,
       toNumber(searchParams.get("maxDistancePct"), 15)
+    ),
+    minDelta: Math.max(
+      0,
+      toNumber(searchParams.get("minDelta"), 0.15)
+    ),
+    idealDeltaLow: Math.max(
+      0,
+      toNumber(searchParams.get("idealDeltaLow"), 0.2)
+    ),
+    idealDeltaHigh: Math.max(
+      0,
+      toNumber(searchParams.get("idealDeltaHigh"), 0.45)
+    ),
+    maxDelta: Math.max(
+      0,
+      toNumber(searchParams.get("maxDelta"), 0.7)
+    ),
+    maxThetaAbs: Math.max(
+      0,
+      toNumber(searchParams.get("maxThetaAbs"), 0.25)
+    ),
+    maxIv: Math.max(
+      0,
+      toNumber(searchParams.get("maxIv"), 2.5)
     ),
   };
 }
@@ -99,11 +128,40 @@ function normalizeRules(bodyRules = {}) {
       0,
       100
     ),
+    minCombinedScore: clamp(
+      toNumber(bodyRules?.minCombinedScore, 50),
+      0,
+      100
+    ),
     minDte,
     maxDte,
     maxDistancePct: Math.max(
       0,
       toNumber(bodyRules?.maxDistancePct, 15)
+    ),
+    minDelta: Math.max(
+      0,
+      toNumber(bodyRules?.minDelta, 0.15)
+    ),
+    idealDeltaLow: Math.max(
+      0,
+      toNumber(bodyRules?.idealDeltaLow, 0.2)
+    ),
+    idealDeltaHigh: Math.max(
+      0,
+      toNumber(bodyRules?.idealDeltaHigh, 0.45)
+    ),
+    maxDelta: Math.max(
+      0,
+      toNumber(bodyRules?.maxDelta, 0.7)
+    ),
+    maxThetaAbs: Math.max(
+      0,
+      toNumber(bodyRules?.maxThetaAbs, 0.25)
+    ),
+    maxIv: Math.max(
+      0,
+      toNumber(bodyRules?.maxIv, 2.5)
     ),
   };
 }
@@ -360,9 +418,13 @@ function buildWarning(providerResult, selection) {
 
   if (!selection?.primary) {
     return (
-      "Massive respondió con datos, pero ningún contrato " +
-      "cumplió los filtros mínimos actuales de Nexora."
+      selection?.warning ||
+      "Massive respondió con datos, pero ningún contrato cumplió los filtros mínimos actuales de Nexora."
     );
+  }
+
+  if (selection.status === "ESPERAR") {
+    return selection.warning;
   }
 
   return null;
@@ -411,7 +473,8 @@ export async function GET(request) {
 
     const normalizedContracts = normalizeOptionChain(
       providerResult.contracts || [],
-      context
+      context,
+      rules
     );
 
     const rankedContracts = rankOptionContracts(normalizedContracts, {
@@ -432,7 +495,7 @@ export async function GET(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "2.0-massive",
+        version: "2.1-massive-validator-v2",
 
         request: {
           symbol,
@@ -457,14 +520,16 @@ export async function GET(request) {
           primaryContract: selection.primary,
           alternativeContract: selection.alternative,
           status: selection.status,
+          validationStatus:
+            selection.primary?.validationStatus || selection.status,
         },
 
         contracts: rankedContracts,
         warning: buildWarning(providerResult, selection),
 
         nextStep: selection.primary
-          ? "Conectar el contrato seleccionado con Trade Planner y Decision IA."
-          : "Revisar acceso del plan Massive o relajar filtros si la cadena llegó sin contratos elegibles.",
+          ? "Usar contrato validado en Trade Planner y Decision IA."
+          : "Esperar una cadena con mejor cotización, liquidez o griegas.",
       },
       {
         status: 200,
@@ -526,7 +591,8 @@ export async function POST(request) {
 
     const normalizedContracts = normalizeOptionChain(
       providerResult.contracts || [],
-      context
+      context,
+      rules
     );
 
     const rankedContracts = rankOptionContracts(normalizedContracts, {
@@ -547,7 +613,7 @@ export async function POST(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "2.0-massive",
+        version: "2.1-massive-validator-v2",
 
         request: {
           symbol,
@@ -572,6 +638,8 @@ export async function POST(request) {
           primaryContract: selection.primary,
           alternativeContract: selection.alternative,
           status: selection.status,
+          validationStatus:
+            selection.primary?.validationStatus || selection.status,
         },
 
         selection,
@@ -579,8 +647,8 @@ export async function POST(request) {
         warning: buildWarning(providerResult, selection),
 
         nextStep: selection.primary
-          ? "Conectar el contrato seleccionado con Trade Planner y Decision IA."
-          : "Revisar acceso del plan Massive o relajar filtros si la cadena llegó sin contratos elegibles.",
+          ? "Usar contrato validado en Trade Planner y Decision IA."
+          : "Esperar una cadena con mejor cotización, liquidez o griegas.",
       },
       {
         status: 200,
