@@ -784,19 +784,77 @@ export default function Page() {
     return 'Sin confirmación';
   }
 
+  function contractLabel(contract) {
+    if (contract == null) return null;
+
+    if (typeof contract === 'string' || typeof contract === 'number') {
+      return String(contract);
+    }
+
+    if (typeof contract !== 'object') return null;
+
+    const symbol = contract.symbol || contract.contractSymbol || '';
+    const expiration = contract.expiration || '';
+    const strike = contract.strike != null ? String(contract.strike) : '';
+    const side = contract.side || contract.type || '';
+
+    const strikeSide = [strike, side].filter(Boolean).join(' ');
+    const parts = [symbol, expiration, strikeSide].filter(Boolean);
+
+    return parts.length ? parts.join(' · ') : 'Contrato seleccionado';
+  }
+
+  function formatContractNumber(value, decimals = 2) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    return n.toFixed(decimals);
+  }
+
+  function formatContractIv(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    const pct = Math.abs(n) <= 3 ? n * 100 : n;
+    return `${pct.toFixed(1)}%`;
+  }
+
   function operationPlan(best) {
     if (!best) return null;
 
     if (best.tradePlan && typeof best.tradePlan === 'object') {
       const tp = best.tradePlan;
+      const primaryContract = tp.contracts?.primary || null;
+      const alternativeContract = tp.contracts?.alternative || null;
 
       return {
         ...tp,
         rr: tp.riskReward1 ?? tp.riskReward ?? null,
-        contract: tp.contracts?.primary || null,
-        alternativeContract: tp.contracts?.alternative || null,
-        expiration: tp.contracts?.expiration || null,
-        premiumTarget: tp.contracts?.premiumTarget || null,
+
+        // IMPORTANTE: React no puede renderizar directamente el objeto
+        // completo del contrato. Guardamos una etiqueta segura para UI y
+        // conservamos el objeto real por separado para mostrar sus campos.
+        contract: contractLabel(primaryContract),
+        alternativeContract: contractLabel(alternativeContract),
+        contractData:
+          primaryContract && typeof primaryContract === 'object'
+            ? primaryContract
+            : null,
+        alternativeContractData:
+          alternativeContract && typeof alternativeContract === 'object'
+            ? alternativeContract
+            : null,
+
+        expiration:
+          tp.contracts?.expiration ||
+          primaryContract?.expiration ||
+          null,
+
+        premiumTarget:
+          tp.contracts?.premiumTarget ??
+          primaryContract?.mid ??
+          primaryContract?.ask ??
+          primaryContract?.last ??
+          null,
+
         maxPremiumRisk: tp.premiumRisk?.stop || null,
         profitTarget: tp.premiumRisk?.profitTarget || null,
         avoid: tp.note || null
@@ -2083,8 +2141,78 @@ export default function Page() {
                                 <b>Vencimiento:</b> {plan?.expiration || '-'}
                               </div>
                               <div style={{ marginTop: 6 }}>
-                                <b>Prima objetivo:</b> {plan?.premiumTarget || '-'}
+                                <b>Prima objetivo:</b>{' '}
+                                {plan?.premiumTarget != null
+                                  ? `$${formatContractNumber(plan.premiumTarget)}`
+                                  : '-'}
                               </div>
+
+                              {plan?.contractData && (
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: isMobile
+                                      ? '1fr 1fr'
+                                      : 'repeat(4, minmax(0, 1fr))',
+                                    gap: 8,
+                                    marginTop: 12
+                                  }}
+                                >
+                                  {[
+                                    ['Bid',
+                                      plan.contractData.bid != null
+                                        ? `$${formatContractNumber(plan.contractData.bid)}`
+                                        : '-'],
+                                    ['Ask',
+                                      plan.contractData.ask != null
+                                        ? `$${formatContractNumber(plan.contractData.ask)}`
+                                        : '-'],
+                                    ['Spread',
+                                      plan.contractData.spreadPct != null
+                                        ? `${formatContractNumber(plan.contractData.spreadPct)}%`
+                                        : '-'],
+                                    ['Volumen',
+                                      plan.contractData.volume ?? '-'],
+                                    ['Open Interest',
+                                      plan.contractData.openInterest ?? '-'],
+                                    ['IV',
+                                      formatContractIv(plan.contractData.impliedVolatility)],
+                                    ['Delta',
+                                      formatContractNumber(plan.contractData.delta, 3)],
+                                    ['Theta',
+                                      formatContractNumber(plan.contractData.theta, 3)]
+                                  ].map(([label, value]) => (
+                                    <div
+                                      key={label}
+                                      style={{
+                                        background: '#020617',
+                                        border: '1px solid #1e293b',
+                                        borderRadius: 9,
+                                        padding: 8
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          color: '#64748b',
+                                          fontSize: 10,
+                                          fontWeight: 800
+                                        }}
+                                      >
+                                        {label}
+                                      </div>
+                                      <div
+                                        style={{
+                                          marginTop: 3,
+                                          fontSize: 12,
+                                          fontWeight: 900
+                                        }}
+                                      >
+                                        {String(value)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
 
                               <div
                                 style={{
@@ -2094,9 +2222,9 @@ export default function Page() {
                                   lineHeight: 1.6
                                 }}
                               >
-                                El contrato es una referencia técnica. Antes de
-                                comprar, Nexora debe confirmar spread, volumen, open
-                                interest y volatilidad implícita.
+                                {plan?.contractData
+                                  ? 'Contrato real validado por Nexora con datos de Option Chain. Revisa spread, volumen, open interest, IV y griegas antes de ejecutar.'
+                                  : 'El contrato es una referencia técnica. Antes de comprar, Nexora debe confirmar spread, volumen, open interest y volatilidad implícita.'}
                               </div>
                             </div>
 
