@@ -1,6 +1,13 @@
 // app/api/options/route.js
-// NEXORA v3.2
-// Option Chain API - Massive real data integration + Validator v2
+// NEXORA v3.3
+// Option Chain API - Massive Smart Contract Search + Validator v2
+//
+// Mejora clave:
+// - busca primero strikes cercanos al objetivo técnico,
+// - recorre varias páginas de Massive,
+// - descarta contratos sin bid/ask válido,
+// - reconsulta snapshots individuales de candidatos cercanos,
+// - selecciona automáticamente el siguiente contrato elegible.
 
 import { NextResponse } from "next/server";
 import {
@@ -108,6 +115,16 @@ function getRulesFromParams(searchParams) {
       0,
       toNumber(searchParams.get("maxIv"), 2.5)
     ),
+    maxPages: clamp(
+      Math.round(toNumber(searchParams.get("maxPages"), 4)),
+      1,
+      6
+    ),
+    refreshCandidates: clamp(
+      Math.round(toNumber(searchParams.get("refreshCandidates"), 10)),
+      0,
+      16
+    ),
   };
 }
 
@@ -163,10 +180,28 @@ function normalizeRules(bodyRules = {}) {
       0,
       toNumber(bodyRules?.maxIv, 2.5)
     ),
+    maxPages: clamp(
+      Math.round(toNumber(bodyRules?.maxPages, 4)),
+      1,
+      6
+    ),
+    refreshCandidates: clamp(
+      Math.round(toNumber(bodyRules?.refreshCandidates, 10)),
+      0,
+      16
+    ),
   };
 }
 
-function buildMassiveUrl({ symbol, side, minDte = 0, maxDte = 60 }) {
+function buildMassiveUrl({
+  symbol,
+  side,
+  minDte = 0,
+  maxDte = 60,
+  underlyingPrice = null,
+  targetStrike = null,
+  maxDistancePct = 15,
+}) {
   const today = new Date();
   const startDate = isoDate(addDays(today, Math.max(0, minDte)));
   const endDate = isoDate(addDays(today, Math.max(minDte, maxDte)));
@@ -181,6 +216,22 @@ function buildMassiveUrl({ symbol, side, minDte = 0, maxDte = 60 }) {
 
   url.searchParams.set("expiration_date.gte", startDate);
   url.searchParams.set("expiration_date.lte", endDate);
+
+  // Limita la búsqueda a la zona útil del precio. Esto evita gastar
+  // el límite de 250 resultados en strikes muy alejados.
+  const center =
+    toNumber(targetStrike) ??
+    toNumber(underlyingPrice);
+
+  if (center !== null && center > 0) {
+    const pct = clamp(toNumber(maxDistancePct, 15), 1, 20) / 100;
+    const low = Math.max(0.01, center * (1 - pct));
+    const high = center * (1 + pct);
+
+    url.searchParams.set("strike_price.gte", String(round(low, 2)));
+    url.searchParams.set("strike_price.lte", String(round(high, 2)));
+  }
+
   url.searchParams.set("limit", "250");
   url.searchParams.set("sort", "expiration_date");
   url.searchParams.set("order", "asc");
@@ -255,6 +306,191 @@ function mapMassiveContract(item = {}, fallback = {}) {
   };
 }
 
+
+function hasValidQuote(contract) {
+  const bid = toNumber(contract?.bid, 0);
+  const ask = toNumber(contract?.ask, 0);
+  return bid > 0 && ask > 0 && ask >= bid;
+}
+
+function contractKey(contract) {
+  return (
+    contract?.contractSymbol ||
+    contract?.symbol ||
+    [
+      contract?.expiration || "",
+      contract?.strike ?? "",
+      contract?.side || "",
+    ].join("|")
+  );
+}
+
+function mergeContracts(baseContracts = [], refreshedContracts = []) {
+  const map = new Map();
+
+  for (const contract of baseContracts) {
+    map.set(contractKey(contract), contract);
+  }
+
+  for (const contract of refreshedContracts) {
+    const key = contractKey(contract);
+    if (!key) continue;
+
+    const previous = map.get(key) || {};
+    map.set(key, {
+      ...previous,
+      ...contract,
+      // No sobreescribimos un dato útil con cero/null.
+      bid: toNumber(contract?.bid, 0) > 0 ? contract.bid : previous.bid,
+      ask: toNumber(contract?.ask, 0) > 0 ? contract.ask : previous.ask,
+      last: toNumber(contract?.last) ?? previous.last ?? null,
+      volume:
+        toNumber(contract?.volume, 0) > 0
+          ? contract.volume
+          : previous.volume ?? 0,
+      openInterest:
+        toNumber(contract?.openInterest, 0) > 0
+          ? contract.openInterest
+          : previous.openInterest ?? 0,
+      impliedVolatility:
+        toNumber(contract?.impliedVolatility) ??
+        previous.impliedVolatility ??
+        null,
+      delta: toNumber(contract?.delta) ?? previous.delta ?? null,
+      gamma: toNumber(contract?.gamma) ?? previous.gamma ?? null,
+      theta: toNumber(contract?.theta) ?? previous.theta ?? null,
+      vega: toNumber(contract?.vega) ?? previous.vega ?? null,
+      underlyingPrice:
+        toNumber(contract?.underlyingPrice) ??
+        previous.underlyingPrice ??
+        null,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+function sortForRefresh(contracts = [], targetStrike = null, underlyingPrice = null) {
+  const center =
+    toNumber(targetStrike) ??
+    toNumber(underlyingPrice);
+
+  return [...contracts].sort((a, b) => {
+    const quoteA = hasValidQuote(a) ? 1 : 0;
+    const quoteB = hasValidQuote(b) ? 1 : 0;
+
+    // Los que no tienen cotización se refrescan primero.
+    if (quoteA !== quoteB) return quoteA - quoteB;
+
+    if (center !== null) {
+      const da = Math.abs(toNumber(a?.strike, center) - center);
+      const db = Math.abs(toNumber(b?.strike, center) - center);
+      if (da !== db) return da - db;
+    }
+
+    const dteA = toNumber(a?.dte, 999);
+    const dteB = toNumber(b?.dte, 999);
+    if (dteA !== dteB) return dteA - dteB;
+
+    return (
+      toNumber(b?.openInterest, 0) -
+      toNumber(a?.openInterest, 0)
+    );
+  });
+}
+
+async function fetchMassiveJson(url, apiKey) {
+  const requestUrl =
+    url instanceof URL
+      ? new URL(url.toString())
+      : new URL(String(url), MASSIVE_BASE_URL);
+
+  if (!requestUrl.searchParams.get("apiKey")) {
+    requestUrl.searchParams.set("apiKey", apiKey);
+  }
+
+  const response = await fetch(requestUrl.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const detail = await readMassiveError(response);
+    const error = new Error(
+      detail || `Massive respondió HTTP ${response.status}.`
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+async function fetchMassivePages(initialUrl, apiKey, maxPages = 4) {
+  const results = [];
+  let nextUrl = initialUrl.toString();
+  let requestId = null;
+  let status = null;
+  let pagesRead = 0;
+  let hasMore = false;
+
+  while (nextUrl && pagesRead < maxPages) {
+    const payload = await fetchMassiveJson(nextUrl, apiKey);
+
+    if (!requestId) requestId = payload?.request_id || null;
+    status = payload?.status || status;
+
+    if (Array.isArray(payload?.results)) {
+      results.push(...payload.results);
+    }
+
+    pagesRead += 1;
+    nextUrl = payload?.next_url || null;
+    hasMore = Boolean(nextUrl);
+  }
+
+  return {
+    results,
+    requestId,
+    status,
+    pagesRead,
+    hasMore,
+  };
+}
+
+async function fetchSingleContractSnapshot({
+  symbol,
+  contractSymbol,
+  apiKey,
+  fallbackUnderlyingPrice,
+}) {
+  if (!contractSymbol) return null;
+
+  const url = new URL(
+    `/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(contractSymbol)}`,
+    MASSIVE_BASE_URL
+  );
+
+  try {
+    const payload = await fetchMassiveJson(url, apiKey);
+    const result = payload?.results;
+
+    if (!result || typeof result !== "object") return null;
+
+    return mapMassiveContract(result, {
+      symbol,
+      underlyingPrice: fallbackUnderlyingPrice,
+    });
+  } catch (error) {
+    console.warn(
+      `[NEXORA Option Chain] Snapshot individual ${contractSymbol}:`,
+      error?.message || error
+    );
+    return null;
+  }
+}
+
 async function readMassiveError(response) {
   try {
     const payload = await response.json();
@@ -268,6 +504,7 @@ async function fetchProviderOptionChain({
   symbol,
   side,
   underlyingPrice,
+  targetStrike,
   rules,
 }) {
   const apiKey = process.env.MASSIVE_API_KEY;
@@ -279,6 +516,7 @@ async function fetchProviderOptionChain({
       symbol,
       side,
       underlyingPrice,
+      targetStrike,
       contracts: [],
       isRealData: false,
       message: "MASSIVE_API_KEY no está disponible en el servidor.",
@@ -291,18 +529,19 @@ async function fetchProviderOptionChain({
     side,
     minDte: rules?.minDte ?? 0,
     maxDte: rules?.maxDte ?? 60,
+    underlyingPrice,
+    targetStrike,
+    maxDistancePct: rules?.maxDistancePct ?? 15,
   });
 
-  url.searchParams.set("apiKey", apiKey);
-
-  let response;
+  let pageResult;
 
   try {
-    response = await fetch(url.toString(), {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
+    pageResult = await fetchMassivePages(
+      url,
+      apiKey,
+      rules?.maxPages ?? 4
+    );
   } catch (error) {
     return {
       provider: "massive",
@@ -310,37 +549,23 @@ async function fetchProviderOptionChain({
       symbol,
       side,
       underlyingPrice,
+      targetStrike,
       contracts: [],
       isRealData: false,
-      message: "No fue posible conectar con Massive.",
-      errorCode: "PROVIDER_CONNECTION_ERROR",
-      providerDetail: error?.message || "Error de conexión",
-    };
-  }
-
-  if (!response.ok) {
-    const detail = await readMassiveError(response);
-
-    return {
-      provider: "massive",
-      source: "massive",
-      symbol,
-      side,
-      underlyingPrice,
-      contracts: [],
-      isRealData: false,
-      message: `Massive respondió HTTP ${response.status}.`,
+      message:
+        error?.status === 401 || error?.status === 403
+          ? "Massive rechazó la solicitud por autenticación o acceso del plan."
+          : "No fue posible consultar la cadena de opciones en Massive.",
       errorCode:
-        response.status === 401 || response.status === 403
+        error?.status === 401 || error?.status === 403
           ? "MASSIVE_AUTH_OR_PLAN"
           : "MASSIVE_HTTP_ERROR",
-      providerStatus: response.status,
-      providerDetail: detail || null,
+      providerStatus: error?.status || null,
+      providerDetail: error?.message || null,
     };
   }
 
-  const payload = await response.json();
-  const rawResults = Array.isArray(payload?.results) ? payload.results : [];
+  const rawResults = pageResult.results || [];
 
   let detectedUnderlyingPrice = toNumber(underlyingPrice);
 
@@ -350,7 +575,7 @@ async function fetchProviderOptionChain({
     );
   }
 
-  const contracts = rawResults
+  let contracts = rawResults
     .map((item) =>
       mapMassiveContract(item, {
         symbol,
@@ -364,21 +589,70 @@ async function fetchProviderOptionChain({
         contract.strike !== null
     );
 
+  const validQuotesBeforeRefresh =
+    contracts.filter(hasValidQuote).length;
+
+  // Segunda capa: si los contratos cercanos no traen una cotización usable,
+  // Nexora reconsulta snapshots individuales empezando por los strikes
+  // más cercanos al objetivo técnico.
+  const refreshPool = sortForRefresh(
+    contracts,
+    targetStrike,
+    detectedUnderlyingPrice
+  )
+    .filter((contract) => !hasValidQuote(contract))
+    .slice(0, rules?.refreshCandidates ?? 10);
+
+  let refreshedContracts = [];
+
+  if (refreshPool.length > 0) {
+    const refreshed = await Promise.all(
+      refreshPool.map((contract) =>
+        fetchSingleContractSnapshot({
+          symbol,
+          contractSymbol:
+            contract.contractSymbol || contract.symbol,
+          apiKey,
+          fallbackUnderlyingPrice: detectedUnderlyingPrice,
+        })
+      )
+    );
+
+    refreshedContracts = refreshed.filter(Boolean);
+    contracts = mergeContracts(contracts, refreshedContracts);
+  }
+
+  const validQuotesAfterRefresh =
+    contracts.filter(hasValidQuote).length;
+
   return {
     provider: "massive",
     source: "massive",
     symbol,
     side,
     underlyingPrice: detectedUnderlyingPrice,
+    targetStrike: toNumber(targetStrike),
     contracts,
     isRealData: true,
     message:
       contracts.length > 0
-        ? "Option Chain recibida desde Massive."
+        ? validQuotesAfterRefresh > 0
+          ? "Option Chain recibida y búsqueda automática de contratos completada."
+          : "Massive devolvió contratos, pero ninguno tiene bid/ask utilizable con el acceso actual."
         : "Massive respondió correctamente, pero no devolvió contratos para los filtros solicitados.",
-    requestId: payload?.request_id || null,
-    providerStatus: payload?.status || "OK",
-    hasMore: Boolean(payload?.next_url),
+    requestId: pageResult.requestId || null,
+    providerStatus: pageResult.status || "OK",
+    hasMore: Boolean(pageResult.hasMore),
+    diagnostics: {
+      pagesRead: pageResult.pagesRead || 0,
+      rawContracts: rawResults.length,
+      mappedContracts: contracts.length,
+      targetStrike: round(targetStrike, 2),
+      validQuotesBeforeRefresh,
+      individualSnapshotsRequested: refreshPool.length,
+      individualSnapshotsReceived: refreshedContracts.length,
+      validQuotesAfterRefresh,
+    },
   };
 }
 
@@ -408,6 +682,7 @@ function buildProviderPublicInfo(providerResult) {
     providerDetail: providerResult?.providerDetail || null,
     requestId: providerResult?.requestId || null,
     hasMore: Boolean(providerResult?.hasMore),
+    diagnostics: providerResult?.diagnostics || null,
   };
 }
 
@@ -456,12 +731,18 @@ export async function GET(request) {
         searchParams.get("underlyingPrice")
     );
 
+    const targetStrike = toNumber(
+      searchParams.get("targetStrike") ||
+        searchParams.get("strike")
+    );
+
     const rules = getRulesFromParams(searchParams);
 
     const providerResult = await fetchProviderOptionChain({
       symbol,
       side,
       underlyingPrice: requestedUnderlyingPrice,
+      targetStrike,
       rules,
     });
 
@@ -495,7 +776,7 @@ export async function GET(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "2.1-massive-validator-v2",
+        version: "3.0-smart-contract-search",
 
         request: {
           symbol,
@@ -508,6 +789,7 @@ export async function GET(request) {
             context.underlyingPrice,
             2
           ),
+          targetStrike: round(targetStrike, 2),
           rules,
         },
 
@@ -574,12 +856,17 @@ export async function POST(request) {
       body?.underlyingPrice ?? body?.price
     );
 
+    const targetStrike = toNumber(
+      body?.targetStrike ?? body?.strike
+    );
+
     const rules = normalizeRules(body?.rules || {});
 
     const providerResult = await fetchProviderOptionChain({
       symbol,
       side,
       underlyingPrice: requestedUnderlyingPrice,
+      targetStrike,
       rules,
     });
 
@@ -613,7 +900,7 @@ export async function POST(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "2.1-massive-validator-v2",
+        version: "3.0-smart-contract-search",
 
         request: {
           symbol,
@@ -626,6 +913,7 @@ export async function POST(request) {
             context.underlyingPrice,
             2
           ),
+          targetStrike: round(targetStrike, 2),
           rules,
         },
 
