@@ -1,13 +1,16 @@
 // app/api/options/route.js
-// NEXORA v3.3
-// Option Chain API - Massive Smart Contract Search + Validator v2
+// NEXORA v3.4
+// Option Chain API
+// Massive Dual Search Engine:
+// 1) Option Chain Snapshot
+// 2) Reference Contract Discovery + Individual Snapshots
 //
-// Mejora clave:
-// - busca primero strikes cercanos al objetivo técnico,
-// - recorre varias páginas de Massive,
-// - descarta contratos sin bid/ask válido,
-// - reconsulta snapshots individuales de candidatos cercanos,
-// - selecciona automáticamente el siguiente contrato elegible.
+// Objetivo:
+// - no asumir que "0 contratos" significa que no existen;
+// - comprobar primero la cadena;
+// - si la cadena viene vacía, descubrir contratos reales en Reference API;
+// - reconsultar snapshots individuales;
+// - conservar Execution Gate: sin bid/ask real no hay contrato APTO.
 
 import { NextResponse } from "next/server";
 import {
@@ -121,9 +124,14 @@ function getRulesFromParams(searchParams) {
       6
     ),
     refreshCandidates: clamp(
-      Math.round(toNumber(searchParams.get("refreshCandidates"), 10)),
+      Math.round(toNumber(searchParams.get("refreshCandidates"), 12)),
       0,
-      16
+      20
+    ),
+    referenceCandidates: clamp(
+      Math.round(toNumber(searchParams.get("referenceCandidates"), 16)),
+      1,
+      24
     ),
   };
 }
@@ -186,21 +194,27 @@ function normalizeRules(bodyRules = {}) {
       6
     ),
     refreshCandidates: clamp(
-      Math.round(toNumber(bodyRules?.refreshCandidates, 10)),
+      Math.round(toNumber(bodyRules?.refreshCandidates, 12)),
       0,
-      16
+      20
+    ),
+    referenceCandidates: clamp(
+      Math.round(toNumber(bodyRules?.referenceCandidates, 16)),
+      1,
+      24
     ),
   };
 }
 
-function buildMassiveUrl({
+// ============================================================
+// URL BUILDERS
+// ============================================================
+
+function buildSnapshotChainUrl({
   symbol,
   side,
   minDte = 0,
   maxDte = 60,
-  underlyingPrice = null,
-  targetStrike = null,
-  maxDistancePct = 15,
 }) {
   const today = new Date();
   const startDate = isoDate(addDays(today, Math.max(0, minDte)));
@@ -216,28 +230,46 @@ function buildMassiveUrl({
 
   url.searchParams.set("expiration_date.gte", startDate);
   url.searchParams.set("expiration_date.lte", endDate);
-
-  // Limita la búsqueda a la zona útil del precio. Esto evita gastar
-  // el límite de 250 resultados en strikes muy alejados.
-  const center =
-    toNumber(targetStrike) ??
-    toNumber(underlyingPrice);
-
-  if (center !== null && center > 0) {
-    const pct = clamp(toNumber(maxDistancePct, 15), 1, 20) / 100;
-    const low = Math.max(0.01, center * (1 - pct));
-    const high = center * (1 + pct);
-
-    url.searchParams.set("strike_price.gte", String(round(low, 2)));
-    url.searchParams.set("strike_price.lte", String(round(high, 2)));
-  }
-
   url.searchParams.set("limit", "250");
   url.searchParams.set("sort", "expiration_date");
   url.searchParams.set("order", "asc");
 
   return url;
 }
+
+function buildReferenceContractsUrl({
+  symbol,
+  side,
+  minDte = 0,
+  maxDte = 60,
+}) {
+  const today = new Date();
+  const startDate = isoDate(addDays(today, Math.max(0, minDte)));
+  const endDate = isoDate(addDays(today, Math.max(minDte, maxDte)));
+
+  const url = new URL(
+    "/v3/reference/options/contracts",
+    MASSIVE_BASE_URL
+  );
+
+  url.searchParams.set("underlying_ticker", symbol);
+
+  const massiveSide = sideForMassive(side);
+  if (massiveSide) url.searchParams.set("contract_type", massiveSide);
+
+  url.searchParams.set("expiration_date.gte", startDate);
+  url.searchParams.set("expiration_date.lte", endDate);
+  url.searchParams.set("expired", "false");
+  url.searchParams.set("limit", "1000");
+  url.searchParams.set("sort", "expiration_date");
+  url.searchParams.set("order", "asc");
+
+  return url;
+}
+
+// ============================================================
+// MAPPERS
+// ============================================================
 
 function mapMassiveContract(item = {}, fallback = {}) {
   const details = item?.details || {};
@@ -306,6 +338,41 @@ function mapMassiveContract(item = {}, fallback = {}) {
   };
 }
 
+function mapReferenceContract(item = {}, fallback = {}) {
+  const side =
+    item?.contract_type === "call"
+      ? "CALL"
+      : item?.contract_type === "put"
+      ? "PUT"
+      : null;
+
+  return {
+    contractSymbol: item?.ticker || null,
+    underlying: item?.underlying_ticker || fallback?.symbol || null,
+    side,
+    expiration: item?.expiration_date || null,
+    strike: toNumber(item?.strike_price),
+    bid: 0,
+    ask: 0,
+    last: null,
+    volume: 0,
+    openInterest: 0,
+    impliedVolatility: null,
+    delta: null,
+    gamma: null,
+    theta: null,
+    vega: null,
+    rho: null,
+    underlyingPrice: toNumber(fallback?.underlyingPrice),
+    inTheMoney: false,
+    currency: "USD",
+    source: "massive-reference",
+  };
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
 
 function hasValidQuote(contract) {
   const bid = toNumber(contract?.bid, 0);
@@ -337,10 +404,10 @@ function mergeContracts(baseContracts = [], refreshedContracts = []) {
     if (!key) continue;
 
     const previous = map.get(key) || {};
+
     map.set(key, {
       ...previous,
       ...contract,
-      // No sobreescribimos un dato útil con cero/null.
       bid: toNumber(contract?.bid, 0) > 0 ? contract.bid : previous.bid,
       ask: toNumber(contract?.ask, 0) > 0 ? contract.ask : previous.ask,
       last: toNumber(contract?.last) ?? previous.last ?? null,
@@ -370,33 +437,62 @@ function mergeContracts(baseContracts = [], refreshedContracts = []) {
   return Array.from(map.values());
 }
 
-function sortForRefresh(contracts = [], targetStrike = null, underlyingPrice = null) {
+function sortNearTarget(
+  contracts = [],
+  targetStrike = null,
+  underlyingPrice = null
+) {
   const center =
     toNumber(targetStrike) ??
     toNumber(underlyingPrice);
 
   return [...contracts].sort((a, b) => {
-    const quoteA = hasValidQuote(a) ? 1 : 0;
-    const quoteB = hasValidQuote(b) ? 1 : 0;
-
-    // Los que no tienen cotización se refrescan primero.
-    if (quoteA !== quoteB) return quoteA - quoteB;
-
     if (center !== null) {
       const da = Math.abs(toNumber(a?.strike, center) - center);
       const db = Math.abs(toNumber(b?.strike, center) - center);
       if (da !== db) return da - db;
     }
 
-    const dteA = toNumber(a?.dte, 999);
-    const dteB = toNumber(b?.dte, 999);
-    if (dteA !== dteB) return dteA - dteB;
+    const ea = String(a?.expiration || "");
+    const eb = String(b?.expiration || "");
+    if (ea !== eb) return ea.localeCompare(eb);
 
-    return (
-      toNumber(b?.openInterest, 0) -
-      toNumber(a?.openInterest, 0)
-    );
+    return toNumber(a?.strike, 0) - toNumber(b?.strike, 0);
   });
+}
+
+function filterByDistance(
+  contracts = [],
+  targetStrike = null,
+  underlyingPrice = null,
+  maxDistancePct = 15
+) {
+  const center =
+    toNumber(targetStrike) ??
+    toNumber(underlyingPrice);
+
+  if (center === null || center <= 0) return contracts;
+
+  const maxPct = Math.max(0, toNumber(maxDistancePct, 15));
+
+  return contracts.filter((contract) => {
+    const strike = toNumber(contract?.strike);
+    if (strike === null) return false;
+
+    const distancePct =
+      (Math.abs(strike - center) / center) * 100;
+
+    return distancePct <= maxPct;
+  });
+}
+
+async function readMassiveError(response) {
+  try {
+    const payload = await response.json();
+    return payload?.error || payload?.message || payload?.status || "";
+  } catch {
+    return "";
+  }
 }
 
 async function fetchMassiveJson(url, apiKey) {
@@ -491,14 +587,9 @@ async function fetchSingleContractSnapshot({
   }
 }
 
-async function readMassiveError(response) {
-  try {
-    const payload = await response.json();
-    return payload?.error || payload?.message || payload?.status || "";
-  } catch {
-    return "";
-  }
-}
+// ============================================================
+// PROVIDER SEARCH
+// ============================================================
 
 async function fetchProviderOptionChain({
   symbol,
@@ -524,58 +615,44 @@ async function fetchProviderOptionChain({
     };
   }
 
-  const url = buildMassiveUrl({
-    symbol,
-    side,
-    minDte: rules?.minDte ?? 0,
-    maxDte: rules?.maxDte ?? 60,
-    underlyingPrice,
-    targetStrike,
-    maxDistancePct: rules?.maxDistancePct ?? 15,
-  });
+  let chainResult = null;
+  let chainError = null;
 
-  let pageResult;
+  // ----------------------------------------------------------
+  // CAPA 1: Snapshot de cadena
+  // ----------------------------------------------------------
 
   try {
-    pageResult = await fetchMassivePages(
-      url,
+    const chainUrl = buildSnapshotChainUrl({
+      symbol,
+      side,
+      minDte: rules?.minDte ?? 0,
+      maxDte: rules?.maxDte ?? 60,
+    });
+
+    chainResult = await fetchMassivePages(
+      chainUrl,
       apiKey,
       rules?.maxPages ?? 4
     );
   } catch (error) {
-    return {
-      provider: "massive",
-      source: "massive",
-      symbol,
-      side,
-      underlyingPrice,
-      targetStrike,
-      contracts: [],
-      isRealData: false,
-      message:
-        error?.status === 401 || error?.status === 403
-          ? "Massive rechazó la solicitud por autenticación o acceso del plan."
-          : "No fue posible consultar la cadena de opciones en Massive.",
-      errorCode:
-        error?.status === 401 || error?.status === 403
-          ? "MASSIVE_AUTH_OR_PLAN"
-          : "MASSIVE_HTTP_ERROR",
-      providerStatus: error?.status || null,
-      providerDetail: error?.message || null,
-    };
+    chainError = error;
   }
 
-  const rawResults = pageResult.results || [];
+  let rawSnapshotResults = chainResult?.results || [];
 
   let detectedUnderlyingPrice = toNumber(underlyingPrice);
 
-  if (detectedUnderlyingPrice === null && rawResults.length > 0) {
+  if (
+    detectedUnderlyingPrice === null &&
+    rawSnapshotResults.length > 0
+  ) {
     detectedUnderlyingPrice = toNumber(
-      rawResults[0]?.underlying_asset?.price
+      rawSnapshotResults[0]?.underlying_asset?.price
     );
   }
 
-  let contracts = rawResults
+  let snapshotContracts = rawSnapshotResults
     .map((item) =>
       mapMassiveContract(item, {
         symbol,
@@ -589,41 +666,177 @@ async function fetchProviderOptionChain({
         contract.strike !== null
     );
 
-  const validQuotesBeforeRefresh =
-    contracts.filter(hasValidQuote).length;
+  snapshotContracts = filterByDistance(
+    snapshotContracts,
+    targetStrike,
+    detectedUnderlyingPrice,
+    rules?.maxDistancePct ?? 15
+  );
 
-  // Segunda capa: si los contratos cercanos no traen una cotización usable,
-  // Nexora reconsulta snapshots individuales empezando por los strikes
-  // más cercanos al objetivo técnico.
-  const refreshPool = sortForRefresh(
-    contracts,
+  const validQuotesBeforeRefresh =
+    snapshotContracts.filter(hasValidQuote).length;
+
+  // Refrescar cercanos sin cotización
+  const refreshPool = sortNearTarget(
+    snapshotContracts.filter((contract) => !hasValidQuote(contract)),
     targetStrike,
     detectedUnderlyingPrice
-  )
-    .filter((contract) => !hasValidQuote(contract))
-    .slice(0, rules?.refreshCandidates ?? 10);
+  ).slice(0, rules?.refreshCandidates ?? 12);
 
-  let refreshedContracts = [];
+  let refreshedFromChain = [];
 
   if (refreshPool.length > 0) {
     const refreshed = await Promise.all(
       refreshPool.map((contract) =>
         fetchSingleContractSnapshot({
           symbol,
-          contractSymbol:
-            contract.contractSymbol || contract.symbol,
+          contractSymbol: contract.contractSymbol,
           apiKey,
           fallbackUnderlyingPrice: detectedUnderlyingPrice,
         })
       )
     );
 
-    refreshedContracts = refreshed.filter(Boolean);
-    contracts = mergeContracts(contracts, refreshedContracts);
+    refreshedFromChain = refreshed.filter(Boolean);
+    snapshotContracts = mergeContracts(
+      snapshotContracts,
+      refreshedFromChain
+    );
   }
 
   const validQuotesAfterRefresh =
-    contracts.filter(hasValidQuote).length;
+    snapshotContracts.filter(hasValidQuote).length;
+
+  // ----------------------------------------------------------
+  // CAPA 2: Reference Contracts si Snapshot no encontró contratos
+  // ----------------------------------------------------------
+
+  let referenceResult = null;
+  let referenceError = null;
+  let referenceContracts = [];
+  let referenceCandidates = [];
+  let individualReferenceSnapshots = [];
+
+  if (snapshotContracts.length === 0) {
+    try {
+      const referenceUrl = buildReferenceContractsUrl({
+        symbol,
+        side,
+        minDte: rules?.minDte ?? 0,
+        maxDte: rules?.maxDte ?? 60,
+      });
+
+      referenceResult = await fetchMassivePages(
+        referenceUrl,
+        apiKey,
+        rules?.maxPages ?? 4
+      );
+
+      referenceContracts = (referenceResult?.results || [])
+        .map((item) =>
+          mapReferenceContract(item, {
+            symbol,
+            underlyingPrice: detectedUnderlyingPrice,
+          })
+        )
+        .filter(
+          (contract) =>
+            contract.side &&
+            contract.expiration &&
+            contract.strike !== null
+        );
+
+      referenceContracts = filterByDistance(
+        referenceContracts,
+        targetStrike,
+        detectedUnderlyingPrice,
+        rules?.maxDistancePct ?? 15
+      );
+
+      referenceCandidates = sortNearTarget(
+        referenceContracts,
+        targetStrike,
+        detectedUnderlyingPrice
+      ).slice(0, rules?.referenceCandidates ?? 16);
+
+      if (referenceCandidates.length > 0) {
+        const snapshots = await Promise.all(
+          referenceCandidates.map((contract) =>
+            fetchSingleContractSnapshot({
+              symbol,
+              contractSymbol: contract.contractSymbol,
+              apiKey,
+              fallbackUnderlyingPrice: detectedUnderlyingPrice,
+            })
+          )
+        );
+
+        individualReferenceSnapshots =
+          snapshots.filter(Boolean);
+
+        snapshotContracts = mergeContracts(
+          referenceCandidates,
+          individualReferenceSnapshots
+        );
+      }
+    } catch (error) {
+      referenceError = error;
+    }
+  }
+
+  const validQuotesFinal =
+    snapshotContracts.filter(hasValidQuote).length;
+
+  // Si ambos endpoints fallaron por auth/plan
+  if (
+    snapshotContracts.length === 0 &&
+    chainError &&
+    referenceError
+  ) {
+    const status =
+      chainError?.status ||
+      referenceError?.status ||
+      null;
+
+    return {
+      provider: "massive",
+      source: "massive",
+      symbol,
+      side,
+      underlyingPrice: detectedUnderlyingPrice,
+      targetStrike,
+      contracts: [],
+      isRealData: false,
+      message:
+        status === 401 || status === 403
+          ? "Massive rechazó la solicitud por autenticación o acceso del plan."
+          : "No fue posible consultar Massive.",
+      errorCode:
+        status === 401 || status === 403
+          ? "MASSIVE_AUTH_OR_PLAN"
+          : "MASSIVE_HTTP_ERROR",
+      providerStatus: status,
+      providerDetail:
+        chainError?.message ||
+        referenceError?.message ||
+        null,
+    };
+  }
+
+  let message = "";
+
+  if (snapshotContracts.length > 0) {
+    message =
+      validQuotesFinal > 0
+        ? "Contratos encontrados y snapshots individuales procesados."
+        : "Se encontraron contratos reales, pero ninguno tiene bid/ask utilizable con el acceso actual.";
+  } else if (referenceContracts.length > 0) {
+    message =
+      "Massive Reference encontró contratos, pero no fue posible obtener snapshots utilizables.";
+  } else {
+    message =
+      "Massive respondió, pero no se encontraron contratos activos para los filtros solicitados.";
+  }
 
   return {
     provider: "massive",
@@ -632,29 +845,67 @@ async function fetchProviderOptionChain({
     side,
     underlyingPrice: detectedUnderlyingPrice,
     targetStrike: toNumber(targetStrike),
-    contracts,
+    contracts: snapshotContracts,
     isRealData: true,
-    message:
-      contracts.length > 0
-        ? validQuotesAfterRefresh > 0
-          ? "Option Chain recibida y búsqueda automática de contratos completada."
-          : "Massive devolvió contratos, pero ninguno tiene bid/ask utilizable con el acceso actual."
-        : "Massive respondió correctamente, pero no devolvió contratos para los filtros solicitados.",
-    requestId: pageResult.requestId || null,
-    providerStatus: pageResult.status || "OK",
-    hasMore: Boolean(pageResult.hasMore),
+    message,
+
+    requestId:
+      chainResult?.requestId ||
+      referenceResult?.requestId ||
+      null,
+
+    providerStatus:
+      chainResult?.status ||
+      referenceResult?.status ||
+      "OK",
+
+    hasMore:
+      Boolean(chainResult?.hasMore) ||
+      Boolean(referenceResult?.hasMore),
+
     diagnostics: {
-      pagesRead: pageResult.pagesRead || 0,
-      rawContracts: rawResults.length,
-      mappedContracts: contracts.length,
-      targetStrike: round(targetStrike, 2),
-      validQuotesBeforeRefresh,
-      individualSnapshotsRequested: refreshPool.length,
-      individualSnapshotsReceived: refreshedContracts.length,
-      validQuotesAfterRefresh,
+      strategy:
+        rawSnapshotResults.length > 0
+          ? "SNAPSHOT_CHAIN"
+          : referenceContracts.length > 0
+          ? "REFERENCE_DISCOVERY"
+          : "NO_CONTRACTS_FOUND",
+
+      chain: {
+        pagesRead: chainResult?.pagesRead || 0,
+        rawContracts: rawSnapshotResults.length,
+        mappedContracts: snapshotContracts.length,
+        validQuotesBeforeRefresh,
+        refreshRequested: refreshPool.length,
+        refreshReceived: refreshedFromChain.length,
+        validQuotesAfterRefresh,
+        errorStatus: chainError?.status || null,
+        errorMessage: chainError?.message || null,
+      },
+
+      reference: {
+        pagesRead: referenceResult?.pagesRead || 0,
+        rawContracts: referenceResult?.results?.length || 0,
+        mappedContracts: referenceContracts.length,
+        candidatesRequested: referenceCandidates.length,
+        snapshotsReceived: individualReferenceSnapshots.length,
+        errorStatus: referenceError?.status || null,
+        errorMessage: referenceError?.message || null,
+      },
+
+      final: {
+        contracts: snapshotContracts.length,
+        validQuotes: validQuotesFinal,
+        targetStrike: round(targetStrike, 2),
+        underlyingPrice: round(detectedUnderlyingPrice, 2),
+      },
     },
   };
 }
+
+// ============================================================
+// RESPONSE HELPERS
+// ============================================================
 
 function buildContext({
   symbol,
@@ -688,7 +939,10 @@ function buildProviderPublicInfo(providerResult) {
 
 function buildWarning(providerResult, selection) {
   if (!providerResult?.isRealData) {
-    return providerResult?.message || "Option Chain real no disponible.";
+    return (
+      providerResult?.message ||
+      "Option Chain real no disponible."
+    );
   }
 
   if (!selection?.primary) {
@@ -705,12 +959,70 @@ function buildWarning(providerResult, selection) {
   return null;
 }
 
+async function processOptionRequest({
+  symbol,
+  side,
+  requestedUnderlyingPrice,
+  targetStrike,
+  rules,
+}) {
+  const providerResult = await fetchProviderOptionChain({
+    symbol,
+    side,
+    underlyingPrice: requestedUnderlyingPrice,
+    targetStrike,
+    rules,
+  });
+
+  const context = buildContext({
+    symbol,
+    requestedUnderlyingPrice,
+    providerResult,
+  });
+
+  const normalizedContracts = normalizeOptionChain(
+    providerResult.contracts || [],
+    context,
+    rules
+  );
+
+  const rankedContracts = rankOptionContracts(
+    normalizedContracts,
+    {
+      side,
+      ...rules,
+    }
+  );
+
+  const selection = selectOptionCandidates(
+    providerResult.contracts || [],
+    context,
+    {
+      side,
+      ...rules,
+    }
+  );
+
+  return {
+    providerResult,
+    context,
+    normalizedContracts,
+    rankedContracts,
+    selection,
+  };
+}
+
+// ============================================================
+// GET
+// ============================================================
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
 
     const symbol = cleanSymbol(
-      searchParams.get("symbol") || searchParams.get("ticker")
+      searchParams.get("symbol") ||
+      searchParams.get("ticker")
     );
 
     if (!symbol) {
@@ -724,127 +1036,128 @@ export async function GET(request) {
       );
     }
 
-    const side = normalizeSide(searchParams.get("side"));
+    const side = normalizeSide(
+      searchParams.get("side")
+    );
 
     const requestedUnderlyingPrice = toNumber(
       searchParams.get("price") ||
-        searchParams.get("underlyingPrice")
+      searchParams.get("underlyingPrice")
     );
 
     const targetStrike = toNumber(
       searchParams.get("targetStrike") ||
-        searchParams.get("strike")
+      searchParams.get("strike")
     );
 
     const rules = getRulesFromParams(searchParams);
 
-    const providerResult = await fetchProviderOptionChain({
+    const {
+      providerResult,
+      context,
+      normalizedContracts,
+      rankedContracts,
+      selection,
+    } = await processOptionRequest({
       symbol,
       side,
-      underlyingPrice: requestedUnderlyingPrice,
+      requestedUnderlyingPrice,
       targetStrike,
       rules,
     });
-
-    const context = buildContext({
-      symbol,
-      requestedUnderlyingPrice,
-      providerResult,
-    });
-
-    const normalizedContracts = normalizeOptionChain(
-      providerResult.contracts || [],
-      context,
-      rules
-    );
-
-    const rankedContracts = rankOptionContracts(normalizedContracts, {
-      side,
-      ...rules,
-    });
-
-    const selection = selectOptionCandidates(
-      providerResult.contracts || [],
-      context,
-      {
-        side,
-        ...rules,
-      }
-    );
 
     return NextResponse.json(
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.0-smart-contract-search",
+        version: "3.4-dual-search",
 
         request: {
           symbol,
           side,
-          requestedUnderlyingPrice: round(
-            requestedUnderlyingPrice,
-            2
-          ),
-          detectedUnderlyingPrice: round(
-            context.underlyingPrice,
-            2
-          ),
+          requestedUnderlyingPrice:
+            round(requestedUnderlyingPrice, 2),
+          detectedUnderlyingPrice:
+            round(context.underlyingPrice, 2),
           targetStrike: round(targetStrike, 2),
           rules,
         },
 
-        provider: buildProviderPublicInfo(providerResult),
+        provider:
+          buildProviderPublicInfo(providerResult),
 
         summary: {
-          totalRawContracts: providerResult.contracts?.length || 0,
-          normalizedContracts: normalizedContracts.length,
-          eligibleContracts: rankedContracts.length,
-          primaryContract: selection.primary,
-          alternativeContract: selection.alternative,
-          status: selection.status,
+          totalRawContracts:
+            providerResult.contracts?.length || 0,
+          normalizedContracts:
+            normalizedContracts.length,
+          eligibleContracts:
+            rankedContracts.length,
+          primaryContract:
+            selection.primary,
+          alternativeContract:
+            selection.alternative,
+          status:
+            selection.status,
           validationStatus:
-            selection.primary?.validationStatus || selection.status,
+            selection.primary?.validationStatus ||
+            selection.status,
         },
 
+        selection,
         contracts: rankedContracts,
-        warning: buildWarning(providerResult, selection),
+        warning:
+          buildWarning(providerResult, selection),
 
         nextStep: selection.primary
           ? "Usar contrato validado en Trade Planner y Decision IA."
-          : "Esperar una cadena con mejor cotización, liquidez o griegas.",
+          : "Revisar diagnostics: si Reference encontró contratos pero no hay bid/ask, el problema está en acceso a snapshots/quotes; si Reference también devuelve 0, revisar filtros o cobertura.",
       },
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate",
         },
       }
     );
   } catch (error) {
-    console.error("[NEXORA /api/options GET] Error:", error);
+    console.error(
+      "[NEXORA /api/options GET] Error:",
+      error
+    );
 
     return NextResponse.json(
       {
         ok: false,
-        error: "No fue posible procesar Option Chain.",
-        detail: error?.message || "Error desconocido",
+        error:
+          "No fue posible procesar Option Chain.",
+        detail:
+          error?.message || "Error desconocido",
       },
       { status: 500 }
     );
   }
 }
 
+// ============================================================
+// POST
+// ============================================================
+
 export async function POST(request) {
   try {
     const body = await request.json();
 
-    const symbol = cleanSymbol(body?.symbol || body?.ticker);
+    const symbol = cleanSymbol(
+      body?.symbol || body?.ticker
+    );
 
     if (!symbol) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Falta symbol o ticker en el body.",
+          error:
+            "Falta symbol o ticker en el body.",
         },
         { status: 400 }
       );
@@ -852,107 +1165,104 @@ export async function POST(request) {
 
     const side = normalizeSide(body?.side);
 
-    const requestedUnderlyingPrice = toNumber(
-      body?.underlyingPrice ?? body?.price
-    );
+    const requestedUnderlyingPrice =
+      toNumber(
+        body?.underlyingPrice ??
+        body?.price
+      );
 
     const targetStrike = toNumber(
-      body?.targetStrike ?? body?.strike
+      body?.targetStrike ??
+      body?.strike
     );
 
-    const rules = normalizeRules(body?.rules || {});
+    const rules = normalizeRules(
+      body?.rules || {}
+    );
 
-    const providerResult = await fetchProviderOptionChain({
+    const {
+      providerResult,
+      context,
+      normalizedContracts,
+      rankedContracts,
+      selection,
+    } = await processOptionRequest({
       symbol,
       side,
-      underlyingPrice: requestedUnderlyingPrice,
+      requestedUnderlyingPrice,
       targetStrike,
       rules,
     });
-
-    const context = buildContext({
-      symbol,
-      requestedUnderlyingPrice,
-      providerResult,
-    });
-
-    const normalizedContracts = normalizeOptionChain(
-      providerResult.contracts || [],
-      context,
-      rules
-    );
-
-    const rankedContracts = rankOptionContracts(normalizedContracts, {
-      side,
-      ...rules,
-    });
-
-    const selection = selectOptionCandidates(
-      providerResult.contracts || [],
-      context,
-      {
-        side,
-        ...rules,
-      }
-    );
 
     return NextResponse.json(
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.0-smart-contract-search",
+        version: "3.4-dual-search",
 
         request: {
           symbol,
           side,
-          requestedUnderlyingPrice: round(
-            requestedUnderlyingPrice,
-            2
-          ),
-          detectedUnderlyingPrice: round(
-            context.underlyingPrice,
-            2
-          ),
-          targetStrike: round(targetStrike, 2),
+          requestedUnderlyingPrice:
+            round(requestedUnderlyingPrice, 2),
+          detectedUnderlyingPrice:
+            round(context.underlyingPrice, 2),
+          targetStrike:
+            round(targetStrike, 2),
           rules,
         },
 
-        provider: buildProviderPublicInfo(providerResult),
+        provider:
+          buildProviderPublicInfo(providerResult),
 
         summary: {
-          totalRawContracts: providerResult.contracts?.length || 0,
-          normalizedContracts: normalizedContracts.length,
-          eligibleContracts: rankedContracts.length,
-          primaryContract: selection.primary,
-          alternativeContract: selection.alternative,
-          status: selection.status,
+          totalRawContracts:
+            providerResult.contracts?.length || 0,
+          normalizedContracts:
+            normalizedContracts.length,
+          eligibleContracts:
+            rankedContracts.length,
+          primaryContract:
+            selection.primary,
+          alternativeContract:
+            selection.alternative,
+          status:
+            selection.status,
           validationStatus:
-            selection.primary?.validationStatus || selection.status,
+            selection.primary?.validationStatus ||
+            selection.status,
         },
 
         selection,
         contracts: rankedContracts,
-        warning: buildWarning(providerResult, selection),
+        warning:
+          buildWarning(providerResult, selection),
 
         nextStep: selection.primary
           ? "Usar contrato validado en Trade Planner y Decision IA."
-          : "Esperar una cadena con mejor cotización, liquidez o griegas.",
+          : "Revisar diagnostics: si Reference encontró contratos pero no hay bid/ask, el problema está en acceso a snapshots/quotes; si Reference también devuelve 0, revisar filtros o cobertura.",
       },
       {
         status: 200,
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate",
         },
       }
     );
   } catch (error) {
-    console.error("[NEXORA /api/options POST] Error:", error);
+    console.error(
+      "[NEXORA /api/options POST] Error:",
+      error
+    );
 
     return NextResponse.json(
       {
         ok: false,
-        error: "No fue posible procesar la solicitud de opciones.",
-        detail: error?.message || "Error desconocido",
+        error:
+          "No fue posible procesar la solicitud de opciones.",
+        detail:
+          error?.message || "Error desconocido",
       },
       { status: 500 }
     );
