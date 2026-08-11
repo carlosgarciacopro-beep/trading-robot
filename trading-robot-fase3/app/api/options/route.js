@@ -1,417 +1,204 @@
-// app/api/options/route.js
-// NEXORA v3.8 FULL ROUTE - DEFAULTS FIX + OFFICIAL OPTIONS QUOTES
-// Option Chain API
-// Massive Dual Search Engine:
-// 1) Option Chain Snapshot
-// 2) Reference Contract Discovery + Individual Snapshots
-//
-// Objetivo:
-// - no asumir que "0 contratos" significa que no existen;
-// - comprobar primero la cadena;
-// - si la cadena viene vacía, descubrir contratos reales en Reference API;
-// - reconsultar snapshots individuales;
-// - conservar Execution Gate: sin bid/ask real no hay contrato APTO.
+// app/api/options/route.js // NEXORA v3.9 SAFE PENDING QUOTE CANDIDATE
+// Option Chain API // Massive Dual Search Engine: // 1) Option Chain
+Snapshot // 2) Reference Contract Discovery + Individual Snapshots // //
+Objetivo: // - no asumir que “0 contratos” significa que no existen;
+// - comprobar primero la cadena; // - si la cadena viene vacía,
+descubrir contratos reales en Reference API; // - reconsultar snapshots
+individuales; // - conservar Execution Gate: sin bid/ask real no hay
+contrato APTO.
 
-import { NextResponse } from "next/server";
-import {
-  normalizeOptionChain,
-  rankOptionContracts,
-  selectOptionCandidates,
-} from "../../../lib/options";
+import { NextResponse } from “next/server”; import {
+normalizeOptionChain, rankOptionContracts, selectOptionCandidates, }
+from “../../../lib/options”;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const dynamic = “force-dynamic”; export const revalidate = 0;
 
-const MASSIVE_BASE_URL = "https://api.massive.com";
+const MASSIVE_BASE_URL = “https://api.massive.com”;
 
-const cleanSymbol = (value) =>
-  String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9.^-]/g, "");
+const cleanSymbol = (value) => String(value || ““) .trim()
+.toUpperCase() .replace(/[^(A-Z0-9.)-]/g,”“);
 
-const normalizeSide = (value) => {
-  const side = String(value || "").trim().toUpperCase();
-  if (side === "CALL" || side === "C") return "CALL";
-  if (side === "PUT" || side === "P") return "PUT";
-  return null;
+const normalizeSide = (value) => { const side = String(value ||
+““).trim().toUpperCase(); if (side ===”CALL” || side === “C”) return
+“CALL”; if (side === “PUT” || side === “P”) return “PUT”; return null;
 };
 
-const sideForMassive = (side) => {
-  if (side === "CALL") return "call";
-  if (side === "PUT") return "put";
-  return null;
-};
+const sideForMassive = (side) => { if (side === “CALL”) return “call”;
+if (side === “PUT”) return “put”; return null; };
 
-const toNumber = (value, fallback = null) => {
-  // URLSearchParams.get() devuelve null si un parámetro no existe.
-  // Number(null) === 0, por eso hay que respetar el fallback.
-  if (
-    value === null ||
-    value === undefined ||
-    (typeof value === "string" && value.trim() === "")
-  ) {
-    return fallback;
-  }
+const toNumber = (value, fallback = null) => { // URLSearchParams.get()
+devuelve null si un parámetro no existe. // Number(null) === 0, por eso
+hay que respetar el fallback. if ( value === null || value === undefined
+|| (typeof value === “string” && value.trim() === ““) ) { return
+fallback; }
 
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-};
+const n = Number(value); return Number.isFinite(n) ? n : fallback; };
 
-const clamp = (value, min, max) =>
-  Math.min(max, Math.max(min, value));
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const round = (value, decimals = 2) => {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  const factor = 10 ** decimals;
-  return Math.round(n * factor) / factor;
-};
+const round = (value, decimals = 2) => { const n = Number(value); if
+(!Number.isFinite(n)) return null; const factor = 10 ** decimals; return
+Math.round(n * factor) / factor; };
 
 const isoDate = (date) => date.toISOString().slice(0, 10);
 
-const addDays = (date, days) => {
-  const copy = new Date(date);
-  copy.setUTCDate(copy.getUTCDate() + days);
-  return copy;
-};
+const addDays = (date, days) => { const copy = new Date(date);
+copy.setUTCDate(copy.getUTCDate() + days); return copy; };
 
-function getRulesFromParams(searchParams) {
-  const minDte = Math.max(
-    0,
-    Math.round(toNumber(searchParams.get("minDte"), 0))
-  );
+function getRulesFromParams(searchParams) { const minDte = Math.max( 0,
+Math.round(toNumber(searchParams.get(“minDte”), 0)) );
 
-  const maxDte = Math.max(
-    minDte,
-    Math.round(toNumber(searchParams.get("maxDte"), 60))
-  );
+const maxDte = Math.max( minDte,
+Math.round(toNumber(searchParams.get(“maxDte”), 60)) );
 
-  return {
-    minLiquidityScore: clamp(
-      toNumber(searchParams.get("minLiquidityScore"), 50),
-      0,
-      100
-    ),
-    minCombinedScore: clamp(
-      toNumber(searchParams.get("minCombinedScore"), 50),
-      0,
-      100
-    ),
-    minDte,
-    maxDte,
-    maxDistancePct: Math.max(
-      0,
-      toNumber(searchParams.get("maxDistancePct"), 15)
-    ),
-    minDelta: Math.max(
-      0,
-      toNumber(searchParams.get("minDelta"), 0.15)
-    ),
-    idealDeltaLow: Math.max(
-      0,
-      toNumber(searchParams.get("idealDeltaLow"), 0.2)
-    ),
-    idealDeltaHigh: Math.max(
-      0,
-      toNumber(searchParams.get("idealDeltaHigh"), 0.45)
-    ),
-    maxDelta: Math.max(
-      0,
-      toNumber(searchParams.get("maxDelta"), 0.7)
-    ),
-    maxThetaAbs: Math.max(
-      0,
-      toNumber(searchParams.get("maxThetaAbs"), 0.25)
-    ),
-    maxIv: Math.max(
-      0,
-      toNumber(searchParams.get("maxIv"), 2.5)
-    ),
-    maxPages: clamp(
-      Math.round(toNumber(searchParams.get("maxPages"), 4)),
-      1,
-      6
-    ),
-    refreshCandidates: clamp(
-      Math.round(toNumber(searchParams.get("refreshCandidates"), 12)),
-      0,
-      20
-    ),
-    referenceCandidates: clamp(
-      Math.round(toNumber(searchParams.get("referenceCandidates"), 16)),
-      1,
-      24
-    ),
-  };
-}
+return { minLiquidityScore: clamp(
+toNumber(searchParams.get(“minLiquidityScore”), 50), 0, 100 ),
+minCombinedScore: clamp( toNumber(searchParams.get(“minCombinedScore”),
+50), 0, 100 ), minDte, maxDte, maxDistancePct: Math.max( 0,
+toNumber(searchParams.get(“maxDistancePct”), 15) ), minDelta: Math.max(
+0, toNumber(searchParams.get(“minDelta”), 0.15) ), idealDeltaLow:
+Math.max( 0, toNumber(searchParams.get(“idealDeltaLow”), 0.2) ),
+idealDeltaHigh: Math.max( 0,
+toNumber(searchParams.get(“idealDeltaHigh”), 0.45) ), maxDelta:
+Math.max( 0, toNumber(searchParams.get(“maxDelta”), 0.7) ), maxThetaAbs:
+Math.max( 0, toNumber(searchParams.get(“maxThetaAbs”), 0.25) ), maxIv:
+Math.max( 0, toNumber(searchParams.get(“maxIv”), 2.5) ), maxPages:
+clamp( Math.round(toNumber(searchParams.get(“maxPages”), 4)), 1, 6 ),
+refreshCandidates: clamp(
+Math.round(toNumber(searchParams.get(“refreshCandidates”), 12)), 0, 20
+), referenceCandidates: clamp(
+Math.round(toNumber(searchParams.get(“referenceCandidates”), 16)), 1, 24
+), }; }
 
-function normalizeRules(bodyRules = {}) {
-  const minDte = Math.max(
-    0,
-    Math.round(toNumber(bodyRules?.minDte, 0))
-  );
+function normalizeRules(bodyRules = {}) { const minDte = Math.max( 0,
+Math.round(toNumber(bodyRules?.minDte, 0)) );
 
-  const maxDte = Math.max(
-    minDte,
-    Math.round(toNumber(bodyRules?.maxDte, 60))
-  );
+const maxDte = Math.max( minDte, Math.round(toNumber(bodyRules?.maxDte,
+60)) );
 
-  return {
-    minLiquidityScore: clamp(
-      toNumber(bodyRules?.minLiquidityScore, 50),
-      0,
-      100
-    ),
-    minCombinedScore: clamp(
-      toNumber(bodyRules?.minCombinedScore, 50),
-      0,
-      100
-    ),
-    minDte,
-    maxDte,
-    maxDistancePct: Math.max(
-      0,
-      toNumber(bodyRules?.maxDistancePct, 15)
-    ),
-    minDelta: Math.max(
-      0,
-      toNumber(bodyRules?.minDelta, 0.15)
-    ),
-    idealDeltaLow: Math.max(
-      0,
-      toNumber(bodyRules?.idealDeltaLow, 0.2)
-    ),
-    idealDeltaHigh: Math.max(
-      0,
-      toNumber(bodyRules?.idealDeltaHigh, 0.45)
-    ),
-    maxDelta: Math.max(
-      0,
-      toNumber(bodyRules?.maxDelta, 0.7)
-    ),
-    maxThetaAbs: Math.max(
-      0,
-      toNumber(bodyRules?.maxThetaAbs, 0.25)
-    ),
-    maxIv: Math.max(
-      0,
-      toNumber(bodyRules?.maxIv, 2.5)
-    ),
-    maxPages: clamp(
-      Math.round(toNumber(bodyRules?.maxPages, 4)),
-      1,
-      6
-    ),
-    refreshCandidates: clamp(
-      Math.round(toNumber(bodyRules?.refreshCandidates, 12)),
-      0,
-      20
-    ),
-    referenceCandidates: clamp(
-      Math.round(toNumber(bodyRules?.referenceCandidates, 16)),
-      1,
-      24
-    ),
-  };
-}
+return { minLiquidityScore: clamp(
+toNumber(bodyRules?.minLiquidityScore, 50), 0, 100 ), minCombinedScore:
+clamp( toNumber(bodyRules?.minCombinedScore, 50), 0, 100 ), minDte,
+maxDte, maxDistancePct: Math.max( 0, toNumber(bodyRules?.maxDistancePct,
+15) ), minDelta: Math.max( 0, toNumber(bodyRules?.minDelta, 0.15) ),
+idealDeltaLow: Math.max( 0, toNumber(bodyRules?.idealDeltaLow, 0.2) ),
+idealDeltaHigh: Math.max( 0, toNumber(bodyRules?.idealDeltaHigh, 0.45)
+), maxDelta: Math.max( 0, toNumber(bodyRules?.maxDelta, 0.7) ),
+maxThetaAbs: Math.max( 0, toNumber(bodyRules?.maxThetaAbs, 0.25) ),
+maxIv: Math.max( 0, toNumber(bodyRules?.maxIv, 2.5) ), maxPages: clamp(
+Math.round(toNumber(bodyRules?.maxPages, 4)), 1, 6 ), refreshCandidates:
+clamp( Math.round(toNumber(bodyRules?.refreshCandidates, 12)), 0, 20 ),
+referenceCandidates: clamp(
+Math.round(toNumber(bodyRules?.referenceCandidates, 16)), 1, 24 ), }; }
 
-// ============================================================
-// URL BUILDERS
-// ============================================================
+// ============================================================ // URL
+BUILDERS // ============================================================
 
-function buildSnapshotChainUrl({
-  symbol,
-  side,
-  minDte = 0,
-  maxDte = 60,
-}) {
-  const today = new Date();
-  const startDate = isoDate(addDays(today, Math.max(0, minDte)));
-  const endDate = isoDate(addDays(today, Math.max(minDte, maxDte)));
+function buildSnapshotChainUrl({ symbol, side, minDte = 0, maxDte = 60,
+}) { const today = new Date(); const startDate = isoDate(addDays(today,
+Math.max(0, minDte))); const endDate = isoDate(addDays(today,
+Math.max(minDte, maxDte)));
 
-  const url = new URL(
-    `/v3/snapshot/options/${encodeURIComponent(symbol)}`,
-    MASSIVE_BASE_URL
-  );
+const url = new URL( /v3/snapshot/options/${encodeURIComponent(symbol)},
+MASSIVE_BASE_URL );
 
-  const massiveSide = sideForMassive(side);
-  if (massiveSide) url.searchParams.set("contract_type", massiveSide);
+const massiveSide = sideForMassive(side); if (massiveSide)
+url.searchParams.set(“contract_type”, massiveSide);
 
-  url.searchParams.set("expiration_date.gte", startDate);
-  url.searchParams.set("expiration_date.lte", endDate);
-  url.searchParams.set("limit", "250");
-  url.searchParams.set("sort", "expiration_date");
-  url.searchParams.set("order", "asc");
+url.searchParams.set(“expiration_date.gte”, startDate);
+url.searchParams.set(“expiration_date.lte”, endDate);
+url.searchParams.set(“limit”, “250”); url.searchParams.set(“sort”,
+“expiration_date”); url.searchParams.set(“order”, “asc”);
 
-  return url;
-}
+return url; }
 
-function buildReferenceContractsUrl({
-  symbol,
-  side,
-  minDte = 0,
-  maxDte = 60,
-}) {
-  const today = new Date();
-  const startDate = isoDate(addDays(today, Math.max(0, minDte)));
-  const endDate = isoDate(addDays(today, Math.max(minDte, maxDte)));
+function buildReferenceContractsUrl({ symbol, side, minDte = 0, maxDte =
+60, }) { const today = new Date(); const startDate =
+isoDate(addDays(today, Math.max(0, minDte))); const endDate =
+isoDate(addDays(today, Math.max(minDte, maxDte)));
 
-  const url = new URL(
-    "/v3/reference/options/contracts",
-    MASSIVE_BASE_URL
-  );
+const url = new URL( “/v3/reference/options/contracts”, MASSIVE_BASE_URL
+);
 
-  url.searchParams.set("underlying_ticker", symbol);
+url.searchParams.set(“underlying_ticker”, symbol);
 
-  const massiveSide = sideForMassive(side);
-  if (massiveSide) url.searchParams.set("contract_type", massiveSide);
+const massiveSide = sideForMassive(side); if (massiveSide)
+url.searchParams.set(“contract_type”, massiveSide);
 
-  url.searchParams.set("expiration_date.gte", startDate);
-  url.searchParams.set("expiration_date.lte", endDate);
-  url.searchParams.set("expired", "false");
-  url.searchParams.set("limit", "1000");
-  url.searchParams.set("sort", "expiration_date");
-  url.searchParams.set("order", "asc");
+url.searchParams.set(“expiration_date.gte”, startDate);
+url.searchParams.set(“expiration_date.lte”, endDate);
+url.searchParams.set(“expired”, “false”); url.searchParams.set(“limit”,
+“1000”); url.searchParams.set(“sort”, “expiration_date”);
+url.searchParams.set(“order”, “asc”);
 
-  return url;
-}
+return url; }
 
-// ============================================================
-// MAPPERS
-// ============================================================
+// ============================================================ //
+MAPPERS // ============================================================
 
-function mapMassiveContract(item = {}, fallback = {}) {
-  const details = item?.details || {};
-  const quote = item?.last_quote || {};
-  const trade = item?.last_trade || {};
-  const greeks = item?.greeks || {};
-  const day = item?.day || {};
-  const session = item?.session || {};
-  const underlying = item?.underlying_asset || {};
+function mapMassiveContract(item = {}, fallback = {}) { const details =
+item?.details || {}; const quote = item?.last_quote || {}; const trade =
+item?.last_trade || {}; const greeks = item?.greeks || {}; const day =
+item?.day || {}; const session = item?.session || {}; const underlying =
+item?.underlying_asset || {};
 
-  const contractSide =
-    details?.contract_type === "call"
-      ? "CALL"
-      : details?.contract_type === "put"
-      ? "PUT"
-      : null;
+const contractSide = details?.contract_type === “call” ? “CALL” :
+details?.contract_type === “put” ? “PUT” : null;
 
-  const strike = toNumber(details?.strike_price);
+const strike = toNumber(details?.strike_price);
 
-  const underlyingPrice =
-    toNumber(underlying?.price) ??
-    toNumber(fallback?.underlyingPrice);
+const underlyingPrice = toNumber(underlying?.price) ??
+toNumber(fallback?.underlyingPrice);
 
-  const volume =
-    toNumber(day?.volume) ??
-    toNumber(session?.volume) ??
-    0;
+const volume = toNumber(day?.volume) ?? toNumber(session?.volume) ?? 0;
 
-  const last =
-    toNumber(trade?.price) ??
-    toNumber(day?.close) ??
-    toNumber(session?.close) ??
-    toNumber(quote?.midpoint) ??
-    null;
+const last = toNumber(trade?.price) ?? toNumber(day?.close) ??
+toNumber(session?.close) ?? toNumber(quote?.midpoint) ?? null;
 
-  return {
-    contractSymbol: details?.ticker || item?.ticker || null,
-    underlying: underlying?.ticker || fallback?.symbol || null,
-    side: contractSide,
-    expiration: details?.expiration_date || null,
-    strike,
-    bid: toNumber(quote?.bid, 0),
-    ask: toNumber(quote?.ask, 0),
-    last,
-    volume,
-    openInterest: toNumber(item?.open_interest, 0),
-    impliedVolatility: toNumber(item?.implied_volatility),
-    delta: toNumber(greeks?.delta),
-    gamma: toNumber(greeks?.gamma),
-    theta: toNumber(greeks?.theta),
-    vega: toNumber(greeks?.vega),
-    rho: null,
-    underlyingPrice,
-    inTheMoney:
-      contractSide === "CALL" &&
-      underlyingPrice !== null &&
-      strike !== null
-        ? underlyingPrice > strike
-        : contractSide === "PUT" &&
-          underlyingPrice !== null &&
-          strike !== null
-        ? underlyingPrice < strike
-        : false,
-    currency: "USD",
-    source: "massive",
-  };
-}
+return { contractSymbol: details?.ticker || item?.ticker || null,
+underlying: underlying?.ticker || fallback?.symbol || null, side:
+contractSide, expiration: details?.expiration_date || null, strike, bid:
+toNumber(quote?.bid, 0), ask: toNumber(quote?.ask, 0), last, volume,
+openInterest: toNumber(item?.open_interest, 0), impliedVolatility:
+toNumber(item?.implied_volatility), delta: toNumber(greeks?.delta),
+gamma: toNumber(greeks?.gamma), theta: toNumber(greeks?.theta), vega:
+toNumber(greeks?.vega), rho: null, underlyingPrice, inTheMoney:
+contractSide === “CALL” && underlyingPrice !== null && strike !== null ?
+underlyingPrice > strike : contractSide === “PUT” && underlyingPrice !==
+null && strike !== null ? underlyingPrice < strike : false, currency:
+“USD”, source: “massive”, }; }
 
-function mapReferenceContract(item = {}, fallback = {}) {
-  const side =
-    item?.contract_type === "call"
-      ? "CALL"
-      : item?.contract_type === "put"
-      ? "PUT"
-      : null;
+function mapReferenceContract(item = {}, fallback = {}) { const side =
+item?.contract_type === “call” ? “CALL” : item?.contract_type === “put”
+? “PUT” : null;
 
-  return {
-    contractSymbol: item?.ticker || null,
-    underlying: item?.underlying_ticker || fallback?.symbol || null,
-    side,
-    expiration: item?.expiration_date || null,
-    strike: toNumber(item?.strike_price),
-    bid: 0,
-    ask: 0,
-    last: null,
-    volume: 0,
-    openInterest: 0,
-    impliedVolatility: null,
-    delta: null,
-    gamma: null,
-    theta: null,
-    vega: null,
-    rho: null,
-    underlyingPrice: toNumber(fallback?.underlyingPrice),
-    inTheMoney: false,
-    currency: "USD",
-    source: "massive-reference",
-  };
-}
+return { contractSymbol: item?.ticker || null, underlying:
+item?.underlying_ticker || fallback?.symbol || null, side, expiration:
+item?.expiration_date || null, strike: toNumber(item?.strike_price),
+bid: 0, ask: 0, last: null, volume: 0, openInterest: 0,
+impliedVolatility: null, delta: null, gamma: null, theta: null, vega:
+null, rho: null, underlyingPrice: toNumber(fallback?.underlyingPrice),
+inTheMoney: false, currency: “USD”, source: “massive-reference”, }; }
 
-// ============================================================
-// HELPERS
-// ============================================================
+// ============================================================ //
+HELPERS // ============================================================
 
-function hasValidQuote(contract) {
-  const bid = toNumber(contract?.bid, 0);
-  const ask = toNumber(contract?.ask, 0);
-  return bid > 0 && ask > 0 && ask >= bid;
-}
+function hasValidQuote(contract) { const bid = toNumber(contract?.bid,
+0); const ask = toNumber(contract?.ask, 0); return bid > 0 && ask > 0 &&
+ask >= bid; }
 
-function contractKey(contract) {
-  return (
-    contract?.contractSymbol ||
-    contract?.symbol ||
-    [
-      contract?.expiration || "",
-      contract?.strike ?? "",
-      contract?.side || "",
-    ].join("|")
-  );
-}
+function contractKey(contract) { return ( contract?.contractSymbol ||
+contract?.symbol || [ contract?.expiration || ““, contract?.strike ??”“,
+contract?.side ||”“, ].join(“|”) ); }
 
 function mergeContracts(baseContracts = [], refreshedContracts = []) {
-  const map = new Map();
+const map = new Map();
 
-  for (const contract of baseContracts) {
-    map.set(contractKey(contract), contract);
-  }
+for (const contract of baseContracts) { map.set(contractKey(contract),
+contract); }
 
-  for (const contract of refreshedContracts) {
-    const key = contractKey(contract);
-    if (!key) continue;
+for (const contract of refreshedContracts) { const key =
+contractKey(contract); if (!key) continue;
 
     const previous = map.get(key) || {};
 
@@ -442,107 +229,73 @@ function mergeContracts(baseContracts = [], refreshedContracts = []) {
         previous.underlyingPrice ??
         null,
     });
-  }
 
-  return Array.from(map.values());
 }
 
-function sortNearTarget(
-  contracts = [],
-  targetStrike = null,
-  underlyingPrice = null
-) {
-  const center =
-    toNumber(targetStrike) ??
-    toNumber(underlyingPrice);
+return Array.from(map.values()); }
 
-  return [...contracts].sort((a, b) => {
-    if (center !== null) {
-      const da = Math.abs(toNumber(a?.strike, center) - center);
-      const db = Math.abs(toNumber(b?.strike, center) - center);
-      if (da !== db) return da - db;
-    }
+function sortNearTarget( contracts = [], targetStrike = null,
+underlyingPrice = null ) { const center = toNumber(targetStrike) ??
+toNumber(underlyingPrice);
+
+return […contracts].sort((a, b) => { if (center !== null) { const da =
+Math.abs(toNumber(a?.strike, center) - center); const db =
+Math.abs(toNumber(b?.strike, center) - center); if (da !== db) return
+da - db; }
 
     const ea = String(a?.expiration || "");
     const eb = String(b?.expiration || "");
     if (ea !== eb) return ea.localeCompare(eb);
 
     return toNumber(a?.strike, 0) - toNumber(b?.strike, 0);
-  });
-}
 
-function filterByDistance(
-  contracts = [],
-  targetStrike = null,
-  underlyingPrice = null,
-  maxDistancePct = 15
-) {
-  const center =
-    toNumber(targetStrike) ??
-    toNumber(underlyingPrice);
+}); }
 
-  if (center === null || center <= 0) return contracts;
+function filterByDistance( contracts = [], targetStrike = null,
+underlyingPrice = null, maxDistancePct = 15 ) { const center =
+toNumber(targetStrike) ?? toNumber(underlyingPrice);
 
-  const maxPct = Math.max(0, toNumber(maxDistancePct, 15));
+if (center === null || center <= 0) return contracts;
 
-  return contracts.filter((contract) => {
-    const strike = toNumber(contract?.strike);
-    if (strike === null) return false;
+const maxPct = Math.max(0, toNumber(maxDistancePct, 15));
+
+return contracts.filter((contract) => { const strike =
+toNumber(contract?.strike); if (strike === null) return false;
 
     const distancePct =
       (Math.abs(strike - center) / center) * 100;
 
     return distancePct <= maxPct;
-  });
-}
 
-async function readMassiveError(response) {
-  try {
-    const payload = await response.json();
-    return payload?.error || payload?.message || payload?.status || "";
-  } catch {
-    return "";
-  }
-}
+}); }
 
-async function fetchMassiveJson(url, apiKey) {
-  const requestUrl =
-    url instanceof URL
-      ? new URL(url.toString())
-      : new URL(String(url), MASSIVE_BASE_URL);
+async function readMassiveError(response) { try { const payload = await
+response.json(); return payload?.error || payload?.message ||
+payload?.status || ““; } catch { return”“; } }
 
-  if (!requestUrl.searchParams.get("apiKey")) {
-    requestUrl.searchParams.set("apiKey", apiKey);
-  }
+async function fetchMassiveJson(url, apiKey) { const requestUrl = url
+instanceof URL ? new URL(url.toString()) : new URL(String(url),
+MASSIVE_BASE_URL);
 
-  const response = await fetch(requestUrl.toString(), {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
+if (!requestUrl.searchParams.get(“apiKey”)) {
+requestUrl.searchParams.set(“apiKey”, apiKey); }
 
-  if (!response.ok) {
-    const detail = await readMassiveError(response);
-    const error = new Error(
-      detail || `Massive respondió HTTP ${response.status}.`
-    );
-    error.status = response.status;
-    throw error;
-  }
+const response = await fetch(requestUrl.toString(), { method: “GET”,
+headers: { Accept: “application/json” }, cache: “no-store”, });
 
-  return response.json();
-}
+if (!response.ok) { const detail = await readMassiveError(response);
+const error = new Error( detail ||
+Massive respondió HTTP ${response.status}. ); error.status =
+response.status; throw error; }
+
+return response.json(); }
 
 async function fetchMassivePages(initialUrl, apiKey, maxPages = 4) {
-  const results = [];
-  let nextUrl = initialUrl.toString();
-  let requestId = null;
-  let status = null;
-  let pagesRead = 0;
-  let hasMore = false;
+const results = []; let nextUrl = initialUrl.toString(); let requestId =
+null; let status = null; let pagesRead = 0; let hasMore = false;
 
-  while (nextUrl && pagesRead < maxPages) {
-    const payload = await fetchMassiveJson(nextUrl, apiKey);
+while (nextUrl && pagesRead < maxPages) { const payload = await
+fetchMassiveJson(nextUrl, apiKey);
 
     if (!requestId) requestId = payload?.request_id || null;
     status = payload?.status || status;
@@ -554,42 +307,25 @@ async function fetchMassivePages(initialUrl, apiKey, maxPages = 4) {
     pagesRead += 1;
     nextUrl = payload?.next_url || null;
     hasMore = Boolean(nextUrl);
-  }
 
-  return {
-    results,
-    requestId,
-    status,
-    pagesRead,
-    hasMore,
-  };
 }
 
+return { results, requestId, status, pagesRead, hasMore, }; }
 
-async function fetchLastQuoteRecovery({
-  contractSymbol,
-  apiKey,
-}) {
-  if (!contractSymbol) return null;
+async function fetchLastQuoteRecovery({ contractSymbol, apiKey, }) { if
+(!contractSymbol) return null;
 
-  // Endpoint oficial de Quotes para opciones:
-  // GET /v3/quotes/{optionsTicker}
-  // Pedimos la cotización más reciente disponible.
-  const url = new URL(
-    `/v3/quotes/${encodeURIComponent(contractSymbol)}`,
-    MASSIVE_BASE_URL
-  );
+// Endpoint oficial de Quotes para opciones: // GET
+/v3/quotes/{optionsTicker} // Pedimos la cotización más reciente
+disponible. const url = new URL(
+/v3/quotes/${encodeURIComponent(contractSymbol)}, MASSIVE_BASE_URL );
 
-  url.searchParams.set("order", "desc");
-  url.searchParams.set("limit", "1");
-  url.searchParams.set("sort", "timestamp");
+url.searchParams.set(“order”, “desc”); url.searchParams.set(“limit”,
+“1”); url.searchParams.set(“sort”, “timestamp”);
 
-  try {
-    const payload = await fetchMassiveJson(url, apiKey);
-    const result =
-      Array.isArray(payload?.results) && payload.results.length > 0
-        ? payload.results[0]
-        : null;
+try { const payload = await fetchMassiveJson(url, apiKey); const result
+= Array.isArray(payload?.results) && payload.results.length > 0 ?
+payload.results[0] : null;
 
     if (!result || typeof result !== "object") {
       return {
@@ -631,59 +367,30 @@ async function fetchLastQuoteRecovery({
       errorStatus: null,
       errorMessage: null,
     };
-  } catch (error) {
-    return {
-      contractSymbol,
-      bid: 0,
-      ask: 0,
-      source: "massive-v3-options-quotes",
-      rawAvailable: false,
-      errorStatus: error?.status || null,
-      errorMessage: error?.message || null,
-    };
-  }
-}
 
-async function recoverQuotesForContracts({
-  contracts = [],
-  apiKey,
-  maxCandidates = 12,
-}) {
-  const pool = contracts
-    .filter((contract) => !hasValidQuote(contract))
-    .filter((contract) => contract?.contractSymbol)
-    .slice(0, Math.max(0, maxCandidates));
+} catch (error) { return { contractSymbol, bid: 0, ask: 0, source:
+“massive-v3-options-quotes”, rawAvailable: false, errorStatus:
+error?.status || null, errorMessage: error?.message || null, }; } }
 
-  if (pool.length === 0) {
-    return {
-      contracts,
-      requested: 0,
-      received: 0,
-      validRecovered: 0,
-      recoveries: [],
-    };
-  }
+async function recoverQuotesForContracts({ contracts = [], apiKey,
+maxCandidates = 12, }) { const pool = contracts .filter((contract) =>
+!hasValidQuote(contract)) .filter((contract) =>
+contract?.contractSymbol) .slice(0, Math.max(0, maxCandidates));
 
-  const recoveries = await Promise.all(
-    pool.map((contract) =>
-      fetchLastQuoteRecovery({
-        contractSymbol: contract.contractSymbol,
-        apiKey,
-      })
-    )
-  );
+if (pool.length === 0) { return { contracts, requested: 0, received: 0,
+validRecovered: 0, recoveries: [], }; }
 
-  const recoveryMap = new Map(
-    recoveries
-      .filter(Boolean)
-      .map((quote) => [quote.contractSymbol, quote])
-  );
+const recoveries = await Promise.all( pool.map((contract) =>
+fetchLastQuoteRecovery({ contractSymbol: contract.contractSymbol,
+apiKey, }) ) );
 
-  let validRecovered = 0;
+const recoveryMap = new Map( recoveries .filter(Boolean) .map((quote) =>
+[quote.contractSymbol, quote]) );
 
-  const merged = contracts.map((contract) => {
-    const quote = recoveryMap.get(contract?.contractSymbol);
-    if (!quote) return contract;
+let validRecovered = 0;
+
+const merged = contracts.map((contract) => { const quote =
+recoveryMap.get(contract?.contractSymbol); if (!quote) return contract;
 
     const bid = toNumber(quote?.bid, 0);
     const ask = toNumber(quote?.ask, 0);
@@ -701,33 +408,21 @@ async function recoverQuotesForContracts({
       quoteSource: quote.source,
       quoteTimestamp: quote.quoteTimestamp ?? null,
     };
-  });
 
-  return {
-    contracts: merged,
-    requested: pool.length,
-    received: recoveries.filter(Boolean).length,
-    validRecovered,
-    recoveries,
-  };
-}
+});
 
-async function fetchSingleContractSnapshot({
-  symbol,
-  contractSymbol,
-  apiKey,
-  fallbackUnderlyingPrice,
-}) {
-  if (!contractSymbol) return null;
+return { contracts: merged, requested: pool.length, received:
+recoveries.filter(Boolean).length, validRecovered, recoveries, }; }
 
-  const url = new URL(
-    `/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(contractSymbol)}`,
-    MASSIVE_BASE_URL
-  );
+async function fetchSingleContractSnapshot({ symbol, contractSymbol,
+apiKey, fallbackUnderlyingPrice, }) { if (!contractSymbol) return null;
 
-  try {
-    const payload = await fetchMassiveJson(url, apiKey);
-    const result = payload?.results;
+const url = new URL(
+/v3/snapshot/options/${encodeURIComponent(symbol)}/${encodeURIComponent(contractSymbol)},
+MASSIVE_BASE_URL );
+
+try { const payload = await fetchMassiveJson(url, apiKey); const result
+= payload?.results;
 
     if (!result || typeof result !== "object") return null;
 
@@ -735,153 +430,91 @@ async function fetchSingleContractSnapshot({
       symbol,
       underlyingPrice: fallbackUnderlyingPrice,
     });
-  } catch (error) {
-    console.warn(
-      `[NEXORA Option Chain] Snapshot individual ${contractSymbol}:`,
-      error?.message || error
-    );
-    return null;
-  }
-}
 
-// ============================================================
-// PROVIDER SEARCH
-// ============================================================
+} catch (error) { console.warn(
+[NEXORA Option Chain] Snapshot individual ${contractSymbol}:,
+error?.message || error ); return null; } }
 
-async function fetchProviderOptionChain({
-  symbol,
-  side,
-  underlyingPrice,
-  targetStrike,
-  rules,
-}) {
-  const apiKey = process.env.MASSIVE_API_KEY;
+// ============================================================ //
+PROVIDER SEARCH //
+============================================================
 
-  if (!apiKey) {
-    return {
-      provider: "massive",
-      source: "massive",
-      symbol,
-      side,
-      underlyingPrice,
-      targetStrike,
-      contracts: [],
-      isRealData: false,
-      message: "MASSIVE_API_KEY no está disponible en el servidor.",
-      errorCode: "MISSING_API_KEY",
-    };
-  }
+async function fetchProviderOptionChain({ symbol, side, underlyingPrice,
+targetStrike, rules, }) { const apiKey = process.env.MASSIVE_API_KEY;
 
-  let chainResult = null;
-  let chainError = null;
+if (!apiKey) { return { provider: “massive”, source: “massive”, symbol,
+side, underlyingPrice, targetStrike, contracts: [], isRealData: false,
+message: “MASSIVE_API_KEY no está disponible en el servidor.”,
+errorCode: “MISSING_API_KEY”, }; }
 
-  // ----------------------------------------------------------
-  // CAPA 1: Snapshot de cadena
-  // ----------------------------------------------------------
+let chainResult = null; let chainError = null;
 
-  try {
-    const chainUrl = buildSnapshotChainUrl({
-      symbol,
-      side,
-      minDte: rules?.minDte ?? 0,
-      maxDte: rules?.maxDte ?? 60,
-    });
+// ———————————————————- // CAPA 1: Snapshot de cadena //
+———————————————————-
+
+try { const chainUrl = buildSnapshotChainUrl({ symbol, side, minDte:
+rules?.minDte ?? 0, maxDte: rules?.maxDte ?? 60, });
 
     chainResult = await fetchMassivePages(
       chainUrl,
       apiKey,
       rules?.maxPages ?? 4
     );
-  } catch (error) {
-    chainError = error;
-  }
 
-  let rawSnapshotResults = chainResult?.results || [];
+} catch (error) { chainError = error; }
 
-  let detectedUnderlyingPrice = toNumber(underlyingPrice);
+let rawSnapshotResults = chainResult?.results || [];
 
-  if (
-    detectedUnderlyingPrice === null &&
-    rawSnapshotResults.length > 0
-  ) {
-    detectedUnderlyingPrice = toNumber(
-      rawSnapshotResults[0]?.underlying_asset?.price
-    );
-  }
+let detectedUnderlyingPrice = toNumber(underlyingPrice);
 
-  let snapshotContracts = rawSnapshotResults
-    .map((item) =>
-      mapMassiveContract(item, {
-        symbol,
-        underlyingPrice: detectedUnderlyingPrice,
-      })
-    )
-    .filter(
-      (contract) =>
-        contract.side &&
-        contract.expiration &&
-        contract.strike !== null
-    );
+if ( detectedUnderlyingPrice === null && rawSnapshotResults.length > 0 )
+{ detectedUnderlyingPrice = toNumber(
+rawSnapshotResults[0]?.underlying_asset?.price ); }
 
-  snapshotContracts = filterByDistance(
-    snapshotContracts,
-    targetStrike,
-    detectedUnderlyingPrice,
-    rules?.maxDistancePct ?? 15
-  );
+let snapshotContracts = rawSnapshotResults .map((item) =>
+mapMassiveContract(item, { symbol, underlyingPrice:
+detectedUnderlyingPrice, }) ) .filter( (contract) => contract.side &&
+contract.expiration && contract.strike !== null );
 
-  const validQuotesBeforeRefresh =
-    snapshotContracts.filter(hasValidQuote).length;
+snapshotContracts = filterByDistance( snapshotContracts, targetStrike,
+detectedUnderlyingPrice, rules?.maxDistancePct ?? 15 );
 
-  // Refrescar cercanos sin cotización
-  const refreshPool = sortNearTarget(
-    snapshotContracts.filter((contract) => !hasValidQuote(contract)),
-    targetStrike,
-    detectedUnderlyingPrice
-  ).slice(0, rules?.refreshCandidates ?? 12);
+const validQuotesBeforeRefresh =
+snapshotContracts.filter(hasValidQuote).length;
 
-  let refreshedFromChain = [];
+// Refrescar cercanos sin cotización const refreshPool = sortNearTarget(
+snapshotContracts.filter((contract) => !hasValidQuote(contract)),
+targetStrike, detectedUnderlyingPrice ).slice(0,
+rules?.refreshCandidates ?? 12);
 
-  if (refreshPool.length > 0) {
-    const refreshed = await Promise.all(
-      refreshPool.map((contract) =>
-        fetchSingleContractSnapshot({
-          symbol,
-          contractSymbol: contract.contractSymbol,
-          apiKey,
-          fallbackUnderlyingPrice: detectedUnderlyingPrice,
-        })
-      )
-    );
+let refreshedFromChain = [];
+
+if (refreshPool.length > 0) { const refreshed = await Promise.all(
+refreshPool.map((contract) => fetchSingleContractSnapshot({ symbol,
+contractSymbol: contract.contractSymbol, apiKey,
+fallbackUnderlyingPrice: detectedUnderlyingPrice, }) ) );
 
     refreshedFromChain = refreshed.filter(Boolean);
     snapshotContracts = mergeContracts(
       snapshotContracts,
       refreshedFromChain
     );
-  }
 
-  const validQuotesAfterRefresh =
-    snapshotContracts.filter(hasValidQuote).length;
+}
 
-  // ----------------------------------------------------------
-  // CAPA 2: Reference Contracts si Snapshot no encontró contratos
-  // ----------------------------------------------------------
+const validQuotesAfterRefresh =
+snapshotContracts.filter(hasValidQuote).length;
 
-  let referenceResult = null;
-  let referenceError = null;
-  let referenceContracts = [];
-  let referenceCandidates = [];
-  let individualReferenceSnapshots = [];
+// ———————————————————- // CAPA 2: Reference Contracts si Snapshot no
+encontró contratos // ———————————————————-
 
-  if (snapshotContracts.length === 0) {
-    try {
-      const referenceUrl = buildReferenceContractsUrl({
-        symbol,
-        side,
-        minDte: rules?.minDte ?? 0,
-        maxDte: rules?.maxDte ?? 60,
-      });
+let referenceResult = null; let referenceError = null; let
+referenceContracts = []; let referenceCandidates = []; let
+individualReferenceSnapshots = [];
+
+if (snapshotContracts.length === 0) { try { const referenceUrl =
+buildReferenceContractsUrl({ symbol, side, minDte: rules?.minDte ?? 0,
+maxDte: rules?.maxDte ?? 60, });
 
       referenceResult = await fetchMassivePages(
         referenceUrl,
@@ -939,77 +572,52 @@ async function fetchProviderOptionChain({
     } catch (error) {
       referenceError = error;
     }
-  }
 
-  // ----------------------------------------------------------
-  // CAPA 3: Quote Recovery (NBBO)
-  // ----------------------------------------------------------
-  // Solo se activa para contratos ya descubiertos que siguen sin bid/ask.
-  // Nunca fabrica bid/ask desde last, mid, IV o griegas.
-  const quoteRecovery = await recoverQuotesForContracts({
-    contracts: snapshotContracts,
-    apiKey,
-    maxCandidates: rules?.refreshCandidates ?? 12,
-  });
+}
 
-  snapshotContracts = quoteRecovery.contracts;
+// ———————————————————- // CAPA 3: Quote Recovery (NBBO) //
+———————————————————- // Solo se activa para contratos ya descubiertos
+que siguen sin bid/ask. // Nunca fabrica bid/ask desde last, mid, IV o
+griegas. const quoteRecovery = await recoverQuotesForContracts({
+contracts: snapshotContracts, apiKey, maxCandidates:
+rules?.refreshCandidates ?? 12, });
 
-  const validQuotesFinal =
-    snapshotContracts.filter(hasValidQuote).length;
+snapshotContracts = quoteRecovery.contracts;
 
-  // v3.5 DIAGNOSTICO — solo inspección; no cambia filtros ni selección.
-  const rawChainSample = rawSnapshotResults.slice(0, 5).map((item) => ({
-    ticker: item?.details?.ticker || item?.ticker || null,
-    contractType: item?.details?.contract_type || null,
-    expiration: item?.details?.expiration_date || null,
-    strike: toNumber(item?.details?.strike_price),
-    lastQuote: item?.last_quote || null,
-    lastTrade: item?.last_trade || null,
-    day: item?.day || null,
-    session: item?.session || null,
-    greeks: item?.greeks || null,
-    openInterest: toNumber(item?.open_interest, 0),
-    impliedVolatility: toNumber(item?.implied_volatility),
-    underlyingAsset: item?.underlying_asset || null,
-  }));
+const validQuotesFinal = snapshotContracts.filter(hasValidQuote).length;
 
-  const referenceSample = (referenceResult?.results || []).slice(0, 5).map((item) => ({
-    ticker: item?.ticker || null,
-    contractType: item?.contract_type || null,
-    expiration: item?.expiration_date || null,
-    strike: toNumber(item?.strike_price),
-    primaryExchange: item?.primary_exchange || null,
-    sharesPerContract: item?.shares_per_contract || null,
-  }));
+// v3.5 DIAGNOSTICO — solo inspección; no cambia filtros ni selección.
+const rawChainSample = rawSnapshotResults.slice(0, 5).map((item) => ({
+ticker: item?.details?.ticker || item?.ticker || null, contractType:
+item?.details?.contract_type || null, expiration:
+item?.details?.expiration_date || null, strike:
+toNumber(item?.details?.strike_price), lastQuote: item?.last_quote ||
+null, lastTrade: item?.last_trade || null, day: item?.day || null,
+session: item?.session || null, greeks: item?.greeks || null,
+openInterest: toNumber(item?.open_interest, 0), impliedVolatility:
+toNumber(item?.implied_volatility), underlyingAsset:
+item?.underlying_asset || null, }));
 
-  const individualSnapshotSample = individualReferenceSnapshots.slice(0, 5).map((item) => ({
-    contractSymbol: item?.contractSymbol || null,
-    side: item?.side || null,
-    expiration: item?.expiration || null,
-    strike: item?.strike ?? null,
-    bid: item?.bid ?? null,
-    ask: item?.ask ?? null,
-    last: item?.last ?? null,
-    volume: item?.volume ?? null,
-    openInterest: item?.openInterest ?? null,
-    impliedVolatility: item?.impliedVolatility ?? null,
-    delta: item?.delta ?? null,
-    gamma: item?.gamma ?? null,
-    theta: item?.theta ?? null,
-    vega: item?.vega ?? null,
-    underlyingPrice: item?.underlyingPrice ?? null,
-  }));
+const referenceSample = (referenceResult?.results || []).slice(0,
+5).map((item) => ({ ticker: item?.ticker || null, contractType:
+item?.contract_type || null, expiration: item?.expiration_date || null,
+strike: toNumber(item?.strike_price), primaryExchange:
+item?.primary_exchange || null, sharesPerContract:
+item?.shares_per_contract || null, }));
 
-  // Si ambos endpoints fallaron por auth/plan
-  if (
-    snapshotContracts.length === 0 &&
-    chainError &&
-    referenceError
-  ) {
-    const status =
-      chainError?.status ||
-      referenceError?.status ||
-      null;
+const individualSnapshotSample = individualReferenceSnapshots.slice(0,
+5).map((item) => ({ contractSymbol: item?.contractSymbol || null, side:
+item?.side || null, expiration: item?.expiration || null, strike:
+item?.strike ?? null, bid: item?.bid ?? null, ask: item?.ask ?? null,
+last: item?.last ?? null, volume: item?.volume ?? null, openInterest:
+item?.openInterest ?? null, impliedVolatility: item?.impliedVolatility
+?? null, delta: item?.delta ?? null, gamma: item?.gamma ?? null, theta:
+item?.theta ?? null, vega: item?.vega ?? null, underlyingPrice:
+item?.underlyingPrice ?? null, }));
+
+// Si ambos endpoints fallaron por auth/plan if (
+snapshotContracts.length === 0 && chainError && referenceError ) { const
+status = chainError?.status || referenceError?.status || null;
 
     return {
       provider: "massive",
@@ -1034,33 +642,23 @@ async function fetchProviderOptionChain({
         referenceError?.message ||
         null,
     };
-  }
 
-  let message = "";
+}
 
-  if (snapshotContracts.length > 0) {
-    message =
-      validQuotesFinal > 0
-        ? "Contratos encontrados y snapshots individuales procesados."
-        : "Se encontraron contratos reales, pero ninguno tiene bid/ask utilizable con el acceso actual.";
-  } else if (referenceContracts.length > 0) {
-    message =
-      "Massive Reference encontró contratos, pero no fue posible obtener snapshots utilizables.";
-  } else {
-    message =
-      "Massive respondió, pero no se encontraron contratos activos para los filtros solicitados.";
-  }
+let message = ““;
 
-  return {
-    provider: "massive",
-    source: "massive",
-    symbol,
-    side,
-    underlyingPrice: detectedUnderlyingPrice,
-    targetStrike: toNumber(targetStrike),
-    contracts: snapshotContracts,
-    isRealData: true,
-    message,
+if (snapshotContracts.length > 0) { message = validQuotesFinal > 0 ?
+“Contratos encontrados y snapshots individuales procesados.” : “Se
+encontraron contratos reales, pero ninguno tiene bid/ask utilizable con
+el acceso actual.”; } else if (referenceContracts.length > 0) { message
+= “Massive Reference encontró contratos, pero no fue posible obtener
+snapshots utilizables.”; } else { message = “Massive respondió, pero no
+se encontraron contratos activos para los filtros solicitados.”; }
+
+return { provider: “massive”, source: “massive”, symbol, side,
+underlyingPrice: detectedUnderlyingPrice, targetStrike:
+toNumber(targetStrike), contracts: snapshotContracts, isRealData: true,
+message,
 
     requestId:
       chainResult?.requestId ||
@@ -1135,125 +733,120 @@ async function fetchProviderOptionChain({
         individualSnapshotSample,
       },
     },
-  };
-}
 
-// ============================================================
-// RESPONSE HELPERS
-// ============================================================
+}; }
 
-function buildContext({
-  symbol,
-  requestedUnderlyingPrice,
-  providerResult,
-}) {
-  return {
-    symbol,
-    underlyingPrice:
-      toNumber(providerResult?.underlyingPrice) ??
-      toNumber(requestedUnderlyingPrice),
-    currency: "USD",
-    source: providerResult?.source || "massive",
-  };
-}
+// ============================================================ //
+RESPONSE HELPERS //
+============================================================
 
-function buildProviderPublicInfo(providerResult) {
-  return {
-    name: providerResult?.provider || "massive",
-    source: providerResult?.source || "massive",
-    isRealData: Boolean(providerResult?.isRealData),
-    message: providerResult?.message || null,
-    errorCode: providerResult?.errorCode || null,
-    providerStatus: providerResult?.providerStatus || null,
-    providerDetail: providerResult?.providerDetail || null,
-    requestId: providerResult?.requestId || null,
-    hasMore: Boolean(providerResult?.hasMore),
-    diagnostics: providerResult?.diagnostics || null,
-  };
-}
+function buildContext({ symbol, requestedUnderlyingPrice,
+providerResult, }) { return { symbol, underlyingPrice:
+toNumber(providerResult?.underlyingPrice) ??
+toNumber(requestedUnderlyingPrice), currency: “USD”, source:
+providerResult?.source || “massive”, }; }
 
-function buildWarning(providerResult, selection) {
-  if (!providerResult?.isRealData) {
-    return (
-      providerResult?.message ||
-      "Option Chain real no disponible."
-    );
-  }
+function buildProviderPublicInfo(providerResult) { return { name:
+providerResult?.provider || “massive”, source: providerResult?.source ||
+“massive”, isRealData: Boolean(providerResult?.isRealData), message:
+providerResult?.message || null, errorCode: providerResult?.errorCode ||
+null, providerStatus: providerResult?.providerStatus || null,
+providerDetail: providerResult?.providerDetail || null, requestId:
+providerResult?.requestId || null, hasMore:
+Boolean(providerResult?.hasMore), diagnostics:
+providerResult?.diagnostics || null, }; }
 
-  if (!selection?.primary) {
-    return (
-      selection?.warning ||
-      "Massive respondió con datos, pero ningún contrato cumplió los filtros mínimos actuales de Nexora."
-    );
-  }
+function buildWarning(providerResult, selection) { if
+(!providerResult?.isRealData) { return ( providerResult?.message ||
+“Option Chain real no disponible.” ); }
 
-  if (selection.status === "ESPERAR") {
-    return selection.warning;
-  }
+if (!selection?.primary) { return ( selection?.warning || “Massive
+respondió con datos, pero ningún contrato cumplió los filtros mínimos
+actuales de Nexora.” ); }
 
-  return null;
-}
+if (selection.status === “ESPERAR”) { return selection.warning; }
 
-async function processOptionRequest({
-  symbol,
-  side,
-  requestedUnderlyingPrice,
-  targetStrike,
-  rules,
-}) {
-  const providerResult = await fetchProviderOptionChain({
-    symbol,
-    side,
-    underlyingPrice: requestedUnderlyingPrice,
-    targetStrike,
-    rules,
-  });
+return null; }
 
-  const context = buildContext({
-    symbol,
-    requestedUnderlyingPrice,
-    providerResult,
-  });
+function buildPendingQuoteCandidate( normalizedContracts = [], side =
+null, targetStrike = null, underlyingPrice = null ) { const wantedSide =
+normalizeSide(side);
 
-  const normalizedContracts = normalizeOptionChain(
-    providerResult.contracts || [],
-    context,
-    rules
-  );
+const candidates = normalizedContracts .filter((contract) => !wantedSide
+|| contract?.side === wantedSide) .filter((contract) => contract?.strike
+!== null) .filter((contract) => { const bid = toNumber(contract?.bid,
+0); const ask = toNumber(contract?.ask, 0); return !(bid > 0 && ask > 0
+&& ask >= bid); });
 
-  const rankedContracts = rankOptionContracts(
-    normalizedContracts,
-    {
-      side,
-      ...rules,
-    }
-  );
+if (candidates.length === 0) return null;
 
-  const selection = selectOptionCandidates(
-    providerResult.contracts || [],
-    context,
-    {
-      side,
-      ...rules,
-    }
-  );
+const center = toNumber(targetStrike) ?? toNumber(underlyingPrice);
 
-  return {
-    providerResult,
-    context,
-    normalizedContracts,
-    rankedContracts,
-    selection,
-  };
-}
+const sorted = […candidates].sort((a, b) => { if (center !== null &&
+center > 0) { const da = Math.abs(toNumber(a?.strike, center) - center);
+const db = Math.abs(toNumber(b?.strike, center) - center); if (da !==
+db) return da - db; }
 
-// ============================================================
-// GET
+    const deltaTarget = 0.30;
+    const deltaA = a?.delta == null ? 999 : Math.abs(Math.abs(toNumber(a.delta, 0)) - deltaTarget);
+    const deltaB = b?.delta == null ? 999 : Math.abs(Math.abs(toNumber(b.delta, 0)) - deltaTarget);
+    if (deltaA !== deltaB) return deltaA - deltaB;
+
+    const volumeDiff = toNumber(b?.volume, 0) - toNumber(a?.volume, 0);
+    if (volumeDiff !== 0) return volumeDiff;
+
+    return toNumber(b?.openInterest, 0) - toNumber(a?.openInterest, 0);
+
+});
+
+const contract = sorted[0]; if (!contract) return null;
+
+return { status: “CANDIDATO_COTIZACION_PENDIENTE”, executionAllowed:
+false, reason: “Contrato real encontrado, pero falta bid/ask válido para
+comprobar spread y precio de ejecución.”, contract: { symbol:
+contract?.symbol || null, underlying: contract?.underlying || null,
+side: contract?.side || null, expiration: contract?.expiration || null,
+dte: contract?.dte ?? null, strike: contract?.strike ?? null, last:
+contract?.last ?? null, volume: contract?.volume ?? 0, openInterest:
+contract?.openInterest ?? 0, impliedVolatility:
+contract?.impliedVolatility ?? null, delta: contract?.delta ?? null,
+gamma: contract?.gamma ?? null, theta: contract?.theta ?? null, vega:
+contract?.vega ?? null, underlyingPrice: contract?.underlyingPrice ??
+underlyingPrice ?? null, distanceFromPricePct:
+contract?.distanceFromPricePct ?? null, source: contract?.source ||
+“massive”, }, missingValidation: [“bid”, “ask”, “spread”,
+“execution_price”], instruction: “Confirmar bid/ask y spread en broker
+antes de ejecutar. Nexora NO autoriza entrada con este estado.”, }; }
+
+async function processOptionRequest({ symbol, side,
+requestedUnderlyingPrice, targetStrike, rules, }) { const providerResult
+= await fetchProviderOptionChain({ symbol, side, underlyingPrice:
+requestedUnderlyingPrice, targetStrike, rules, });
+
+const context = buildContext({ symbol, requestedUnderlyingPrice,
+providerResult, });
+
+const normalizedContracts = normalizeOptionChain(
+providerResult.contracts || [], context, rules );
+
+const rankedContracts = rankOptionContracts( normalizedContracts, {
+side, …rules, } );
+
+const selection = selectOptionCandidates( providerResult.contracts ||
+[], context, { side, …rules, } );
+
+const pendingQuoteCandidate = !selection?.primary ?
+buildPendingQuoteCandidate( normalizedContracts, side, targetStrike,
+context.underlyingPrice ) : null;
+
+return { providerResult, context, normalizedContracts, rankedContracts,
+selection, pendingQuoteCandidate, }; }
+
+// ============================================================ // GET
 // ============================================================
 
-export async function GET(request) {
-  try {
-    const { searchParams } = new URL(request.url);
+export async function GET(request) { try { const { searchParams } = new
+URL(request.url);
 
     const symbol = cleanSymbol(
       searchParams.get("symbol") ||
@@ -1293,6 +886,7 @@ export async function GET(request) {
       normalizedContracts,
       rankedContracts,
       selection,
+      pendingQuoteCandidate,
     } = await processOptionRequest({
       symbol,
       side,
@@ -1305,7 +899,7 @@ export async function GET(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.8-full-route-options-quotes",
+        version: "3.9-safe-pending-quote-candidate",
 
         request: {
           symbol,
@@ -1336,9 +930,14 @@ export async function GET(request) {
             selection.status,
           validationStatus:
             selection.primary?.validationStatus ||
-            selection.status,
+            (pendingQuoteCandidate
+              ? "CANDIDATO_COTIZACION_PENDIENTE"
+              : selection.status),
+          executionAllowed:
+            selection.primary?.validationStatus === "APTO",
         },
 
+        pendingQuoteCandidate,
         selection,
         contracts: rankedContracts,
         warning:
@@ -1346,7 +945,9 @@ export async function GET(request) {
 
         nextStep: selection.primary
           ? "Usar contrato validado en Trade Planner y Decision IA."
-          : "Revisar diagnostics: si Reference encontró contratos pero no hay bid/ask, el problema está en acceso a snapshots/quotes; si Reference también devuelve 0, revisar filtros o cobertura.",
+          : pendingQuoteCandidate
+          ? "Mostrar contrato candidato, pero exigir confirmación manual de bid/ask y spread en broker antes de cualquier entrada."
+          : "No hay contrato candidato suficiente; esperar o revisar filtros/cobertura.",
       },
       {
         status: 200,
@@ -1356,11 +957,9 @@ export async function GET(request) {
         },
       }
     );
-  } catch (error) {
-    console.error(
-      "[NEXORA /api/options GET] Error:",
-      error
-    );
+
+} catch (error) { console.error( “[NEXORA /api/options GET] Error:”,
+error );
 
     return NextResponse.json(
       {
@@ -1372,16 +971,14 @@ export async function GET(request) {
       },
       { status: 500 }
     );
-  }
-}
 
-// ============================================================
-// POST
+} }
+
+// ============================================================ // POST
 // ============================================================
 
-export async function POST(request) {
-  try {
-    const body = await request.json();
+export async function POST(request) { try { const body = await
+request.json();
 
     const symbol = cleanSymbol(
       body?.symbol || body?.ticker
@@ -1421,6 +1018,7 @@ export async function POST(request) {
       normalizedContracts,
       rankedContracts,
       selection,
+      pendingQuoteCandidate,
     } = await processOptionRequest({
       symbol,
       side,
@@ -1433,7 +1031,7 @@ export async function POST(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.8-full-route-options-quotes",
+        version: "3.9-safe-pending-quote-candidate",
 
         request: {
           symbol,
@@ -1465,9 +1063,14 @@ export async function POST(request) {
             selection.status,
           validationStatus:
             selection.primary?.validationStatus ||
-            selection.status,
+            (pendingQuoteCandidate
+              ? "CANDIDATO_COTIZACION_PENDIENTE"
+              : selection.status),
+          executionAllowed:
+            selection.primary?.validationStatus === "APTO",
         },
 
+        pendingQuoteCandidate,
         selection,
         contracts: rankedContracts,
         warning:
@@ -1475,7 +1078,9 @@ export async function POST(request) {
 
         nextStep: selection.primary
           ? "Usar contrato validado en Trade Planner y Decision IA."
-          : "Revisar diagnostics: si Reference encontró contratos pero no hay bid/ask, el problema está en acceso a snapshots/quotes; si Reference también devuelve 0, revisar filtros o cobertura.",
+          : pendingQuoteCandidate
+          ? "Mostrar contrato candidato, pero exigir confirmación manual de bid/ask y spread en broker antes de cualquier entrada."
+          : "No hay contrato candidato suficiente; esperar o revisar filtros/cobertura.",
       },
       {
         status: 200,
@@ -1485,11 +1090,9 @@ export async function POST(request) {
         },
       }
     );
-  } catch (error) {
-    console.error(
-      "[NEXORA /api/options POST] Error:",
-      error
-    );
+
+} catch (error) { console.error( “[NEXORA /api/options POST] Error:”,
+error );
 
     return NextResponse.json(
       {
@@ -1501,5 +1104,5 @@ export async function POST(request) {
       },
       { status: 500 }
     );
-  }
-}
+
+} }
