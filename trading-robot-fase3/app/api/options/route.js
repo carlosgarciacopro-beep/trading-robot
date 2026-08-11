@@ -1,5 +1,5 @@
 // app/api/options/route.js
-// NEXORA v3.5 DIAGNOSTICO
+// NEXORA v3.6 QUOTE RECOVERY
 // Option Chain API
 // Massive Dual Search Engine:
 // 1) Option Chain Snapshot
@@ -555,6 +555,135 @@ async function fetchMassivePages(initialUrl, apiKey, maxPages = 4) {
   };
 }
 
+
+async function fetchLastQuoteRecovery({
+  contractSymbol,
+  apiKey,
+}) {
+  if (!contractSymbol) return null;
+
+  // Massive/Polygon compatible last quote endpoint for an option ticker.
+  // This is only a recovery layer: if the plan does not expose a real
+  // NBBO quote, Nexora keeps the contract blocked.
+  const url = new URL(
+    `/v2/last/nbbo/${encodeURIComponent(contractSymbol)}`,
+    MASSIVE_BASE_URL
+  );
+
+  try {
+    const payload = await fetchMassiveJson(url, apiKey);
+    const result = payload?.results || payload?.result || null;
+    if (!result || typeof result !== "object") return null;
+
+    const bid = toNumber(
+      result?.p ??
+      result?.bid_price ??
+      result?.bid ??
+      result?.bp,
+      0
+    );
+
+    const ask = toNumber(
+      result?.P ??
+      result?.ask_price ??
+      result?.ask ??
+      result?.ap,
+      0
+    );
+
+    return {
+      contractSymbol,
+      bid,
+      ask,
+      quoteTimestamp:
+        result?.t ??
+        result?.sip_timestamp ??
+        result?.participant_timestamp ??
+        null,
+      source: "massive-last-nbbo",
+      rawAvailable: true,
+    };
+  } catch (error) {
+    return {
+      contractSymbol,
+      bid: 0,
+      ask: 0,
+      source: "massive-last-nbbo",
+      rawAvailable: false,
+      errorStatus: error?.status || null,
+      errorMessage: error?.message || null,
+    };
+  }
+}
+
+async function recoverQuotesForContracts({
+  contracts = [],
+  apiKey,
+  maxCandidates = 12,
+}) {
+  const pool = contracts
+    .filter((contract) => !hasValidQuote(contract))
+    .filter((contract) => contract?.contractSymbol)
+    .slice(0, Math.max(0, maxCandidates));
+
+  if (pool.length === 0) {
+    return {
+      contracts,
+      requested: 0,
+      received: 0,
+      validRecovered: 0,
+      recoveries: [],
+    };
+  }
+
+  const recoveries = await Promise.all(
+    pool.map((contract) =>
+      fetchLastQuoteRecovery({
+        contractSymbol: contract.contractSymbol,
+        apiKey,
+      })
+    )
+  );
+
+  const recoveryMap = new Map(
+    recoveries
+      .filter(Boolean)
+      .map((quote) => [quote.contractSymbol, quote])
+  );
+
+  let validRecovered = 0;
+
+  const merged = contracts.map((contract) => {
+    const quote = recoveryMap.get(contract?.contractSymbol);
+    if (!quote) return contract;
+
+    const bid = toNumber(quote?.bid, 0);
+    const ask = toNumber(quote?.ask, 0);
+
+    if (!(bid > 0 && ask > 0 && ask >= bid)) {
+      return contract;
+    }
+
+    validRecovered += 1;
+
+    return {
+      ...contract,
+      bid,
+      ask,
+      quoteSource: quote.source,
+      quoteTimestamp: quote.quoteTimestamp ?? null,
+    };
+  });
+
+  return {
+    contracts: merged,
+    requested: pool.length,
+    received: recoveries.filter(Boolean).length,
+    validRecovered,
+    recoveries,
+  };
+}
+
 async function fetchSingleContractSnapshot({
   symbol,
   contractSymbol,
@@ -784,6 +913,19 @@ async function fetchProviderOptionChain({
     }
   }
 
+  // ----------------------------------------------------------
+  // CAPA 3: Quote Recovery (NBBO)
+  // ----------------------------------------------------------
+  // Solo se activa para contratos ya descubiertos que siguen sin bid/ask.
+  // Nunca fabrica bid/ask desde last, mid, IV o griegas.
+  const quoteRecovery = await recoverQuotesForContracts({
+    contracts: snapshotContracts,
+    apiKey,
+    maxCandidates: rules?.refreshCandidates ?? 12,
+  });
+
+  snapshotContracts = quoteRecovery.contracts;
+
   const validQuotesFinal =
     snapshotContracts.filter(hasValidQuote).length;
 
@@ -941,6 +1083,22 @@ async function fetchProviderOptionChain({
         validQuotes: validQuotesFinal,
         targetStrike: round(targetStrike, 2),
         underlyingPrice: round(detectedUnderlyingPrice, 2),
+      },
+
+      quoteRecovery: {
+        endpoint: "/v2/last/nbbo/{optionsTicker}",
+        requested: quoteRecovery.requested,
+        received: quoteRecovery.received,
+        validRecovered: quoteRecovery.validRecovered,
+        attempts: quoteRecovery.recoveries.map((item) => ({
+          contractSymbol: item?.contractSymbol || null,
+          bid: item?.bid ?? null,
+          ask: item?.ask ?? null,
+          source: item?.source || null,
+          rawAvailable: Boolean(item?.rawAvailable),
+          errorStatus: item?.errorStatus || null,
+          errorMessage: item?.errorMessage || null,
+        })),
       },
 
       quoteDiagnostic: {
@@ -1119,7 +1277,7 @@ export async function GET(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.5-quote-diagnostic",
+        version: "3.6-quote-recovery",
 
         request: {
           symbol,
@@ -1247,7 +1405,7 @@ export async function POST(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.5-quote-diagnostic",
+        version: "3.6-quote-recovery",
 
         request: {
           symbol,
