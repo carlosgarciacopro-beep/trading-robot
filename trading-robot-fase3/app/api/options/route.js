@@ -1,5 +1,5 @@
 // app/api/options/route.js
-// NEXORA v3.4
+// NEXORA v3.5 DIAGNOSTICO
 // Option Chain API
 // Massive Dual Search Engine:
 // 1) Option Chain Snapshot
@@ -787,6 +787,49 @@ async function fetchProviderOptionChain({
   const validQuotesFinal =
     snapshotContracts.filter(hasValidQuote).length;
 
+  // v3.5 DIAGNOSTICO — solo inspección; no cambia filtros ni selección.
+  const rawChainSample = rawSnapshotResults.slice(0, 5).map((item) => ({
+    ticker: item?.details?.ticker || item?.ticker || null,
+    contractType: item?.details?.contract_type || null,
+    expiration: item?.details?.expiration_date || null,
+    strike: toNumber(item?.details?.strike_price),
+    lastQuote: item?.last_quote || null,
+    lastTrade: item?.last_trade || null,
+    day: item?.day || null,
+    session: item?.session || null,
+    greeks: item?.greeks || null,
+    openInterest: toNumber(item?.open_interest, 0),
+    impliedVolatility: toNumber(item?.implied_volatility),
+    underlyingAsset: item?.underlying_asset || null,
+  }));
+
+  const referenceSample = (referenceResult?.results || []).slice(0, 5).map((item) => ({
+    ticker: item?.ticker || null,
+    contractType: item?.contract_type || null,
+    expiration: item?.expiration_date || null,
+    strike: toNumber(item?.strike_price),
+    primaryExchange: item?.primary_exchange || null,
+    sharesPerContract: item?.shares_per_contract || null,
+  }));
+
+  const individualSnapshotSample = individualReferenceSnapshots.slice(0, 5).map((item) => ({
+    contractSymbol: item?.contractSymbol || null,
+    side: item?.side || null,
+    expiration: item?.expiration || null,
+    strike: item?.strike ?? null,
+    bid: item?.bid ?? null,
+    ask: item?.ask ?? null,
+    last: item?.last ?? null,
+    volume: item?.volume ?? null,
+    openInterest: item?.openInterest ?? null,
+    impliedVolatility: item?.impliedVolatility ?? null,
+    delta: item?.delta ?? null,
+    gamma: item?.gamma ?? null,
+    theta: item?.theta ?? null,
+    vega: item?.vega ?? null,
+    underlyingPrice: item?.underlyingPrice ?? null,
+  }));
+
   // Si ambos endpoints fallaron por auth/plan
   if (
     snapshotContracts.length === 0 &&
@@ -898,6 +941,12 @@ async function fetchProviderOptionChain({
         validQuotes: validQuotesFinal,
         targetStrike: round(targetStrike, 2),
         underlyingPrice: round(detectedUnderlyingPrice, 2),
+      },
+
+      quoteDiagnostic: {
+        rawChainSample,
+        referenceSample,
+        individualSnapshotSample,
       },
     },
   };
@@ -1070,7 +1119,7 @@ export async function GET(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.4-dual-search",
+        version: "3.5-quote-diagnostic",
 
         request: {
           symbol,
@@ -1198,7 +1247,7 @@ export async function POST(request) {
       {
         ok: providerResult.isRealData !== false,
         module: "NEXORA Option Chain Engine",
-        version: "3.4-dual-search",
+        version: "3.5-quote-diagnostic",
 
         request: {
           symbol,
